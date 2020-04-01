@@ -11,9 +11,11 @@ sphinx = "*"
 tox = "*"
 flake8 = "*"
 coverage = "*"
+pytest = "*"
 
 [packages]
 click = "*"
+pyopenssl = "*"
 
 [requires]
 python_version = "3.8"
