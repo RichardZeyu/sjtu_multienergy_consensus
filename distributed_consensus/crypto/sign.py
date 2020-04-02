@@ -3,7 +3,6 @@
 
 """
 * *******************************************************
-* Copyright VMware, Inc. 2013, 2016. All Rights Reserved.
 * SPDX-License-Identifier: MIT
 * *******************************************************
 *
@@ -19,9 +18,7 @@ import re
 
 from OpenSSL import crypto
 
-UTF_8 = 'utf-8'
-SHA256 = 'sha256'
-SHA512 = 'sha512'
+from .const import SHA256, UTF_8
 
 
 def _extract_certificate(cert):
@@ -85,7 +82,7 @@ def _load_private_key(der_key):
     raise ValueError('invalid private key format or encrypted key')
 
 
-def _sign(private_key, data, digest=SHA256):
+def sign(private_key, data, digest=SHA256):
     '''
     An internal helper method to sign the 'data' with the 'private_key'.
     @type  private_key: C{str}
