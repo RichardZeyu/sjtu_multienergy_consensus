@@ -10,7 +10,9 @@ class Node(AutoRegisterNode):
     public_key: typing.Any
     private_key: typing.Any
 
-    def __init__(self, id, ip, port, public_key, private_key=None, manager=None):
+    def __init__(
+        self, id, ip, port, public_key, private_key=None, manager=None
+    ):
         super().__init__(id, manager=manager)
         self.ip = ip
         self.port = port

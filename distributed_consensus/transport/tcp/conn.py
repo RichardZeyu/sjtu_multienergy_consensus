@@ -5,7 +5,7 @@ from functools import partial
 from logging import getLogger
 
 from ...core.node import Node
-from .protocol import TCPProtocol
+from .protocol import TCPProtocolV1
 
 L = getLogger(__name__)
 
@@ -13,13 +13,13 @@ L = getLogger(__name__)
 class TCPConnectionHandler:
     local_node: Node
     queue_manager: typing.Any
-    protocol_class: typing.Type[TCPProtocol]
+    protocol_class: typing.Type[TCPProtocolV1]
 
     def __init__(
         self,
         local_node: Node,
         queue_manager,
-        protocol_class: typing.Type[TCPProtocol],
+        protocol_class: typing.Type[TCPProtocolV1],
     ):
         super().__init__()
         self.local_node = local_node
@@ -30,7 +30,7 @@ class TCPConnectionHandler:
         )
 
     async def send_handshake(
-        self, writer: asyncio.StreamWriter, protocol: TCPProtocol,
+        self, writer: asyncio.StreamWriter, protocol: TCPProtocolV1,
     ):
         writer.write(protocol.generate_handshake())
         try:
@@ -44,7 +44,7 @@ class TCPConnectionHandler:
         return True
 
     async def wait_handshake(
-        self, reader: asyncio.StreamReader, protocol: TCPProtocol
+        self, reader: asyncio.StreamReader, protocol: TCPProtocolV1
     ) -> typing.Optional[Node]:
         bs = b''
         try:
@@ -103,7 +103,7 @@ class TCPConnectionHandler:
         remote: Node,
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
-        protocol: TCPProtocol,
+        protocol: TCPProtocolV1,
     ):
         ingress, egress = self.queue_manager.create_queue(
             self.local_node, remote
@@ -124,7 +124,7 @@ class TCPConnectionHandler:
         egress: asyncio.Queue,
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
-        protocol: TCPProtocol,
+        protocol: TCPProtocolV1,
     ):
         outbound = asyncio.create_task(egress.get())
         inbound = asyncio.create_task(
@@ -147,9 +147,15 @@ class TCPConnectionHandler:
                         b2a_hex(ex.partial),
                     )
                     raise
-                pkt = protocol.decode(bs)
-                if pkt:
-                    await ingress.put(pkt)
+                while protocol.num_to_read() <= 0:
+                    pkt = protocol.decode(bs)
+                    if pkt is None:
+                        assert (
+                            protocol.num_to_read() > 0
+                        ), 'cannot consume buffer'
+                        break
+                    else:
+                        await ingress.put(pkt)
                 inbound = asyncio.create_task(
                     reader.readexactly(protocol.num_to_read())
                 )
