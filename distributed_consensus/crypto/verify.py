@@ -6,6 +6,16 @@ from .const import SHA256, UTF_8
 from .sign import _extract_certificate
 
 
+def flattern(args):
+    ans = []
+    for a in args:
+        if isinstance(a, (list, tuple)):
+            ans.extend(flattern(a))
+        else:
+            ans.append(a)
+    return ans
+
+
 def _load_public_key(der_key):
     '''
     An internal helper to load public key.
@@ -48,4 +58,11 @@ def verify(public_key, signature, data, digest=SHA256):
     cert = crypto.X509()
     cert.set_pubkey(pkey)
 
-    return crypto.verify(cert, signature, data, digest)
+    try:
+        crypto.verify(cert, signature, data, digest)
+    except crypto.Error as exc:
+        if 'bad signature' in flattern(exc.args):
+            return False
+        else:
+            raise
+    return True
