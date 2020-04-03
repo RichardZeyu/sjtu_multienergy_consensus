@@ -49,7 +49,7 @@ def _load_public_key(der_key):
     raise ValueError('invalid public key format')
 
 
-def verify(public_key, signature, data, digest=SHA256):
+def verify(public_key, signature, data: bytes, digest=SHA256):
     if isinstance(public_key, crypto.PKey):
         pkey = public_key
     else:

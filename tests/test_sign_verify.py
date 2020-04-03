@@ -4,11 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory as TempDir
 
 from distributed_consensus.crypto import generate_key, sign, verify
-
-
-def read_all_str(file: str):
-    with open(file, 'r') as f:
-        return f.read(-1)
+from distributed_consensus.crypto.util import read_all_str
 
 
 class TestSignVerify(unittest.TestCase):

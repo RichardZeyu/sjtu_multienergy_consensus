@@ -70,7 +70,7 @@ def _load_private_key(der_key):
                 crypto.FILETYPE_PEM,
                 '-----BEGIN {}-----\n{}-----END {}-----\n'.format(
                     key_type,
-                    base64.encodestring(der_key).decode(UTF_8),
+                    base64.encodebytes(der_key).decode(UTF_8),
                     key_type,
                 ),
                 b'',

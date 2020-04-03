@@ -2,7 +2,7 @@ import struct
 import typing
 from binascii import b2a_hex
 from datetime import datetime
-from io import BytesIO
+from io import BytesIO, SEEK_SET, SEEK_END
 from logging import getLogger
 
 from ...core.node import Node
@@ -20,13 +20,14 @@ class TCPProtocolV1:
     # version 1B, timestamp 8B, node ID 4B, 4096bits RSA sign 512B
     handshake_struct: str = '>BQL512s'
 
+    handshake_timeout: int = 5
+
     # data len 4B
     packet_header_struct: str = '>L'
 
     # instance properties
     local: Node
     remote: Node
-    handshake_timeout: int
     handshake_recv_len: int
     header_recv_len: int
     signature_len: int
@@ -67,11 +68,18 @@ class TCPProtocolV1:
         )
         return header
 
+    def feed_buffer(self, bs: bytes):
+        self.logger.debug('feeding %s', b2a_hex(bs))
+        try:
+            self.buf.seek(0, SEEK_END)
+            self.buf.write(bs)
+        finally:
+            self.buf.seek(0, SEEK_SET)
+
     def decode(self, bs: bytes) -> typing.Optional[bytes]:
         assert self.remote is not None, 'handshake incomplete'
-        self.logger.debug('feeding %s', b2a_hex(bs))
+        self.feed_buffer(bs)
         self.logger.debug('buf before parse %s', b2a_hex(self.buf.getbuffer()))
-        self.buf.write(bs)
 
         header = self.peek_header()
         if header is None:
@@ -83,10 +91,12 @@ class TCPProtocolV1:
             return None
 
         # drop header which has been peeked
-        self.buf.read(self.header_recv_len)
+        header_bs = self.buf.read(self.header_recv_len)
         pkt = self.buf.read(header[0])
         signature = self.buf.read(self.signature_len)
-        if not verify(self.remote.public_key, signature, pkt, self.digest):
+        if not verify(
+            self.remote.public_key, signature, header_bs + pkt, self.digest
+        ):
             self.logger.warn(
                 'pkt signature corrupted, drop %d bytes', len(pkt)
             )
@@ -132,7 +142,7 @@ class TCPProtocolV1:
         )[: -self.signature_len]
         bs = bs + sign(self.local.private_key, bs, self.digest)
         self.logger.debug('handshake to send: %s', b2a_hex(bs))
-        return self.encode(self, bs)
+        return bs
 
     def parse_handshake(self, bs: bytes) -> typing.Optional[Node]:
         assert self.remote is None, 'double handshake'
@@ -160,7 +170,8 @@ class TCPProtocolV1:
         if node is None:
             self.logger.warn('unconfigured node ID %d', node_id)
             return None
-        if not verify(node.public_key, bs[:-self.signature_len], self.digest):
+        data, signature = bs[: -self.signature_len], bs[-self.signature_len :]
+        if not verify(node.public_key, signature, data, self.digest):
             self.logger.warn('corrupted handshake packet')
             return None
         self.remote = node
