@@ -33,7 +33,6 @@ class TestTCPProtocolV1(unittest.TestCase):
         )
 
     def tearDown(self):
-        self.protocol.buf.close()
         self.protocol = None
 
     @patch('distributed_consensus.transport.tcp.protocol.datetime')

@@ -2,9 +2,9 @@ import struct
 import typing
 from binascii import b2a_hex
 from datetime import datetime
-from io import BytesIO, SEEK_SET, SEEK_END
 from logging import getLogger
 
+from ...core.bytes_buffer import BytesBuffer
 from ...core.node import Node
 from ...core.node_manager import NodeManager
 from ...crypto import SHA256, sign, verify
@@ -31,7 +31,7 @@ class TCPProtocolV1:
     handshake_recv_len: int
     header_recv_len: int
     signature_len: int
-    buf: BytesIO
+    buf: BytesBuffer
     node_manager: NodeManager
 
     def __init__(
@@ -45,7 +45,7 @@ class TCPProtocolV1:
         self.header_recv_len = struct.calcsize(self.packet_header_struct)
         self.signature_len = 4096 // 8
         self.version = 1
-        self.buf = BytesIO()
+        self.buf = BytesBuffer()
         if remote:
             # local is client
             self.logger = L.getChild('TCPProtocolV1').getChild(
@@ -58,28 +58,23 @@ class TCPProtocolV1:
             )
 
     def peek_header(self) -> typing.Optional[typing.Tuple]:
-        buf_len = len(self.buf.getbuffer())
+        buf_len = len(self.buf)
         if buf_len < self.header_recv_len:
             return None
 
         header = struct.unpack(
             self.packet_header_struct,
-            bytes(self.buf.getbuffer()[: self.header_recv_len]),
+            self.buf.peek(self.header_recv_len),
         )
         return header
 
     def feed_buffer(self, bs: bytes):
         self.logger.debug('feeding %s', b2a_hex(bs))
-        try:
-            self.buf.seek(0, SEEK_END)
-            self.buf.write(bs)
-        finally:
-            self.buf.seek(0, SEEK_SET)
+        self.buf.write(bs)
 
     def decode(self, bs: bytes) -> typing.Optional[bytes]:
         assert self.remote is not None, 'handshake incomplete'
         self.feed_buffer(bs)
-        self.logger.debug('buf before parse %s', b2a_hex(self.buf.getbuffer()))
 
         header = self.peek_header()
         if header is None:
@@ -87,7 +82,7 @@ class TCPProtocolV1:
             return None
 
         full_len = self.header_recv_len + header[0] + self.signature_len
-        if len(self.buf.getbuffer()) < full_len:
+        if len(self.buf) < full_len:
             return None
 
         # drop header which has been peeked
@@ -103,7 +98,6 @@ class TCPProtocolV1:
             return None
 
         self.logger.debug('pkt parsed & verified %s', b2a_hex(pkt))
-        self.logger.debug('buf after parse %s', b2a_hex(self.buf.getbuffer()))
 
         return pkt
 
@@ -118,7 +112,7 @@ class TCPProtocolV1:
 
     def num_to_read(self) -> int:
         """ return minimal number of bytes needed to parse next packet """
-        buf_len = len(self.buf.getbuffer())
+        buf_len = len(self.buf)
         self.logger.debug('buf length %d', buf_len)
 
         header = self.peek_header()
