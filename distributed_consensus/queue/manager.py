@@ -73,7 +73,9 @@ class QueueManager:
             return remote, EOC
         return remote, pkt
 
-    async def receive_one(self) -> AddressedPacket:
+    async def receive_one(
+        self, timeout: typing.Optional[float] = None
+    ) -> AddressedPacket:
         addressed_pkt = self.receive_one_no_wait()
         if addressed_pkt is not None:
             return addressed_pkt
@@ -87,7 +89,7 @@ class QueueManager:
         done: typing.Set[asyncio.Task]
         pending: typing.Set[asyncio.Task]
         done, pending = await asyncio.wait(
-            tasks, return_when=asyncio.FIRST_COMPLETED
+            tasks, return_when=asyncio.FIRST_COMPLETED, timeout=timeout
         )
         for task in pending:
             assert (
