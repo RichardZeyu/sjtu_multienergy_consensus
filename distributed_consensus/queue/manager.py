@@ -2,36 +2,42 @@ import asyncio
 import logging
 import typing
 from collections import deque
-from weakref import WeakSet, WeakValueDictionary
+from weakref import WeakValueDictionary
 
 from ..core.node import Node
 from ..core.node_manager import NodeManager
+from .packet import QueuedPacket
 
 L = logging.getLogger(__name__)
 
 EOC = None
 
 
-AddressedPacket = typing.Tuple[Node, typing.Optional[bytes]]
-
-
-def clean_queue(queue: asyncio.Queue[bytes]):
+def clean_queue(queue: asyncio.Queue):
     while not queue.empty():
         try:
             queue.get_nowait()
         except asyncio.QueueEmpty:
             break
     # cancel all coroutines waiting for pkt
-    for getter in queue._getters:
+    for getter in queue._getters:  # type: ignore
         getter.cancel()
+
+
+if typing.TYPE_CHECKING:
+    PacketQueue = asyncio.Queue[QueuedPacket]
+    WeakQueueDictionary = WeakValueDictionary[
+        int, typing.Tuple[PacketQueue, PacketQueue],
+    ]
+else:
+    PacketQueue = typing.Any
+    WeakQueueDictionary = typing.Any
 
 
 class QueueManager:
     local: Node
-    _by_node: WeakValueDictionary[
-        int, typing.Tuple[asyncio.Queue, asyncio.Queue]
-    ]
-    _buffered: typing.Deque[AddressedPacket]
+    _by_node: WeakQueueDictionary
+    _buffered: typing.Deque[QueuedPacket]
     logger: logging.Logger
     node_manager: NodeManager
 
@@ -52,42 +58,76 @@ class QueueManager:
 
         _, egress = self._by_node[remote.id]
         self.logger.debug(f'put pkt to remote {remote.id}')
-        await egress.put(pkt)
+
+        to_queue = QueuedPacket(
+            origin=self.local,
+            send_to=remote,
+            received_from=None,
+            data=pkt,
+            full_packet=None,
+        )
+        await egress.put(to_queue)
 
     async def broadcast(self, pkt: bytes):
         for node_id, (_, egress) in self._by_node.items():
             self.logger.debug(f'broadcast pkt to remote {node_id}')
-            await egress.put(pkt)
+            remote = self.node_manager.get_node(node_id)
+            assert remote is not None
+            to_queue = QueuedPacket(
+                origin=self.local,
+                send_to=remote,
+                received_from=None,
+                data=pkt,
+                full_packet=None,
+            )
+            await egress.put(to_queue)
 
-    def receive_one_no_wait(self) -> typing.Optional[AddressedPacket]:
+    async def broadcast_forward(self, to_forward: QueuedPacket):
+        for node_id, (_, egress) in self._by_node.items():
+            self.logger.debug(f'broadcast pkt to remote {node_id}')
+            remote = self.node_manager.get_node(node_id)
+            assert remote is not None
+            to_queue = QueuedPacket(
+                origin=to_forward.origin,
+                send_to=remote,
+                received_from=to_forward.received_from,
+                data=to_forward.data,
+                full_packet=to_forward.full_packet,
+            )
+            await egress.put(to_queue)
+
+    def receive_one_no_wait(self) -> typing.Optional[QueuedPacket]:
         if self._buffered:
             return self._buffered.popleft()
         return None
 
-    async def _read(self, remote_id: int, ingress: asyncio.Queue[bytes]):
+    async def _read(
+        self, remote_id: int, ingress: PacketQueue,
+    ):
         remote = self.node_manager.get_node(remote_id)
         try:
-            pkt = await ingress.get()
+            pkt: QueuedPacket = await ingress.get()
+            assert pkt is None or pkt.received_from == remote
         except asyncio.CancelledError:
             # in case the connection has been closed
-            return remote, EOC
-        return remote, pkt
+            return EOC
+        return pkt
 
     async def receive_one(
         self, timeout: typing.Optional[float] = None
-    ) -> AddressedPacket:
-        addressed_pkt = self.receive_one_no_wait()
-        if addressed_pkt is not None:
-            return addressed_pkt
+    ) -> QueuedPacket:
+        pkt = self.receive_one_no_wait()
+        if pkt is not None:
+            return pkt
 
-        tasks: typing.List[asyncio.Task] = {
-            asyncio.create_task(
+        tasks: typing.Set[asyncio.Task] = {
+            asyncio.create_task(  # type: ignore
                 self._read(node_id, ingress), name=f'receiving {node_id}'
             )
             for node_id, (ingress, _) in self._by_node.items()
         }
-        done: typing.Set[asyncio.Task]
-        pending: typing.Set[asyncio.Task]
+        done: typing.Set[asyncio.Future]
+        pending: typing.Set[asyncio.Future]
         done, pending = await asyncio.wait(
             tasks, return_when=asyncio.FIRST_COMPLETED, timeout=timeout
         )
@@ -99,9 +139,9 @@ class QueueManager:
 
         for task in done:
             try:
-                addressed_pkt = task.result()
-                assert addressed_pkt is not None
-                self._buffered.append(addressed_pkt)
+                pkt = task.result()
+                assert pkt is not None
+                self._buffered.append(pkt)
             except:  # noqa
                 self.logger.exception(f'exception occurred when in {task!r}')
         return self._buffered.popleft()
@@ -125,7 +165,7 @@ class QueueManager:
             return
         ingress, egress = self._by_node.pop(remote.id)
 
-        # cancellation of ingress getters causes readers return (remote, EOC) indicators
+        # cancellation of ingress getters causes readers return EOC
         clean_queue(ingress)
         clean_queue(egress)
         del ingress

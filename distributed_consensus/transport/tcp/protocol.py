@@ -8,6 +8,7 @@ from ...core.bytes_buffer import BytesBuffer
 from ...core.node import Node
 from ...core.node_manager import NodeManager
 from ...crypto import SHA256, sign, verify
+from ...queue.packet import QueuedPacket
 
 L = getLogger(__name__)
 
@@ -22,12 +23,12 @@ class TCPProtocolV1:
 
     handshake_timeout: int = 5
 
-    # data len 4B
-    packet_header_struct: str = '>L'
+    # original node ID 4B + data len 4B
+    packet_header_struct: str = '>LL'
 
     # instance properties
     local: Node
-    remote: Node
+    remote: typing.Optional[Node]
     handshake_recv_len: int
     header_recv_len: int
     signature_len: int
@@ -35,7 +36,10 @@ class TCPProtocolV1:
     node_manager: NodeManager
 
     def __init__(
-        self, node_manager: NodeManager, local: Node, remote: Node = None
+        self,
+        node_manager: NodeManager,
+        local: Node,
+        remote: typing.Optional[Node] = None,
     ):
         super().__init__()
         self.node_manager = node_manager
@@ -63,8 +67,7 @@ class TCPProtocolV1:
             return None
 
         header = struct.unpack(
-            self.packet_header_struct,
-            self.buf.peek(self.header_recv_len),
+            self.packet_header_struct, self.buf.peek(self.header_recv_len),
         )
         return header
 
@@ -72,7 +75,7 @@ class TCPProtocolV1:
         self.logger.debug('feeding %s', b2a_hex(bs))
         self.buf.write(bs)
 
-    def decode(self, bs: bytes) -> typing.Optional[bytes]:
+    def decode(self, bs: bytes) -> typing.Optional[QueuedPacket]:
         assert self.remote is not None, 'handshake incomplete'
         self.feed_buffer(bs)
 
@@ -81,16 +84,23 @@ class TCPProtocolV1:
             # insufficient data
             return None
 
-        full_len = self.header_recv_len + header[0] + self.signature_len
+        original_id, pkt_len = header
+        full_len = self.header_recv_len + pkt_len + self.signature_len
         if len(self.buf) < full_len:
             return None
 
+        original_node = self.node_manager.get_node(original_id)
+        if original_node is None:
+            self.logger.warn(f'cannot find original node {original_id}, drop')
+            return None
+        assert isinstance(original_node, Node)
+
         # drop header which has been peeked
         header_bs = self.buf.read(self.header_recv_len)
-        pkt = self.buf.read(header[0])
+        pkt = self.buf.read(header[1])
         signature = self.buf.read(self.signature_len)
         if not verify(
-            self.remote.public_key, signature, header_bs + pkt, self.digest
+            original_node.public_key, signature, header_bs + pkt, self.digest
         ):
             self.logger.warn(
                 'pkt signature corrupted, drop %d bytes', len(pkt)
@@ -99,13 +109,26 @@ class TCPProtocolV1:
 
         self.logger.debug('pkt parsed & verified %s', b2a_hex(pkt))
 
-        return pkt
+        return QueuedPacket(
+            origin=original_node,
+            received_from=self.remote,
+            send_to=self.local,
+            data=pkt,
+            full_packet=header_bs + pkt + signature,
+        )
 
-    def encode(self, pkt: bytes) -> bytes:
-        self.logger.debug('pkt to encode %s', b2a_hex(pkt))
-        header = struct.pack(self.packet_header_struct, len(pkt))
+    def encode(self, pkt: QueuedPacket) -> bytes:
+        if pkt.is_forwarding:
+            assert pkt.full_packet is not None
+            return pkt.full_packet
+
+        data: bytes = pkt.data
+        self.logger.debug('pkt to encode %s', b2a_hex(data))
+        header = struct.pack(
+            self.packet_header_struct, self.local.id, len(data)
+        )
         self.logger.debug('header: %s', b2a_hex(header))
-        bs = header + pkt
+        bs = header + data
         signature = sign(self.local.private_key, bs, self.digest)
         # self.logger.debug('encoded: %s', b2a_hex(bs))
         return bs + signature
@@ -120,7 +143,8 @@ class TCPProtocolV1:
             self.logger.debug('shorter than header %d', self.header_recv_len)
             return self.header_recv_len - buf_len
 
-        body_len = self.header_recv_len + header[0] + self.signature_len
+        original_id, pkt_len = header
+        body_len = self.header_recv_len + pkt_len + self.signature_len
         self.logger.debug('expected body length %d', body_len)
 
         return body_len - buf_len if buf_len < body_len else 0
@@ -164,6 +188,8 @@ class TCPProtocolV1:
         if node is None:
             self.logger.warn('unconfigured node ID %d', node_id)
             return None
+
+        assert isinstance(node, Node)
         data, signature = bs[: -self.signature_len], bs[-self.signature_len :]
         if not verify(node.public_key, signature, data, self.digest):
             self.logger.warn('corrupted handshake packet')

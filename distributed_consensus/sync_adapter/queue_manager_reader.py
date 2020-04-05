@@ -2,7 +2,8 @@ import asyncio
 import typing
 from datetime import datetime
 
-from ..queue.manager import AddressedPacket, QueueManager
+from ..queue.manager import QueueManager
+from ..queue.packet import QueuedPacket
 
 
 def wait_next_pkt(
@@ -10,7 +11,7 @@ def wait_next_pkt(
     timeout: typing.Optional[float] = None,
     run_till: typing.Optional[datetime] = None,
     loop: typing.Optional[asyncio.BaseEventLoop] = None,
-) -> AddressedPacket:
+) -> typing.Optional[QueuedPacket]:
     assert not all(
         x is not None for x in [timeout, run_till]
     ), 'timeout and run_till cannot be specified at same time'
@@ -20,5 +21,9 @@ def wait_next_pkt(
         timeout = (run_till - datetime.utcnow()).total_seconds()
     if timeout is not None and timeout <= 0:
         raise asyncio.TimeoutError()
-    recv = manager.receive_one(timeout=timeout)
+    try:
+        recv = manager.receive_one(timeout=timeout)
+    except asyncio.TimeoutError:
+        return None
+
     return _loop.run_until_complete(recv)

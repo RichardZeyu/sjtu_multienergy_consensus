@@ -5,7 +5,9 @@ from functools import partial
 from logging import getLogger
 
 from ...core.node import Node
+from ...core.node_manager import NodeManager
 from ...queue.manager import QueueManager
+from ...queue.packet import QueuedPacket
 from .protocol import TCPProtocolV1
 
 L = getLogger(__name__)
@@ -13,21 +15,24 @@ L = getLogger(__name__)
 
 class TCPConnectionHandler:
     local_node: Node
+    node_manager: NodeManager
     queue_manager: QueueManager
     protocol_class: typing.Type[TCPProtocolV1]
 
     def __init__(
         self,
         local_node: Node,
+        node_manager: NodeManager,
         queue_manager: QueueManager,
         protocol_class: typing.Type[TCPProtocolV1],
     ):
         super().__init__()
         self.local_node = local_node
+        self.node_manager = node_manager
         self.queue_manager = queue_manager
         self.protocol_class = protocol_class
         self.logger = L.getChild('TCPConnectionHandler').getChild(
-            local_node.id
+            f'{local_node.id}'
         )
 
     async def send_handshake(
@@ -78,7 +83,9 @@ class TCPConnectionHandler:
             given remote node identity and initiate handshake from local side
         """
         ok: bool = False
-        protocol = self.protocol_class(self.local_node, remote)
+        protocol = self.protocol_class(
+            self.node_manager, self.local_node, remote
+        )
         self.logger.info(
             'add connection from %s to %s (%s)',
             self.local_node.id,
@@ -88,6 +95,9 @@ class TCPConnectionHandler:
         if remote is None:
             remote = await self.wait_handshake(reader, protocol)
             ok = remote is not None
+            if remote is not None and remote.is_blacked:
+                self.logger.warn(f'remote {remote.id} is blocked, disconnect')
+                ok = False
         else:
             ok = await self.send_handshake(writer, protocol)
         if not ok:
@@ -95,6 +105,7 @@ class TCPConnectionHandler:
             writer.close()
             await writer.wait_closed()
         else:
+            assert remote is not None
             asyncio.create_task(
                 self.dispatch(remote, reader, writer, protocol)
             )
@@ -119,8 +130,8 @@ class TCPConnectionHandler:
 
     async def data_loop(
         self,
-        ingress: asyncio.Queue,
-        egress: asyncio.Queue,
+        ingress: asyncio.Queue[QueuedPacket],
+        egress: asyncio.Queue[QueuedPacket],
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
         protocol: TCPProtocolV1,
@@ -133,9 +144,10 @@ class TCPConnectionHandler:
             done, pending = await asyncio.wait(
                 {outbound, inbound}, return_when=asyncio.FIRST_COMPLETED
             )
+            # TODO: handle cancel and other exceptions
             if outbound in done:
-                pkt = outbound.result()
-                writer.write(protocol.encode(pkt))
+                to_send = outbound.result()
+                writer.write(protocol.encode(to_send))
                 outbound = asyncio.create_task(egress.get())
             if inbound in done:
                 try:
