@@ -61,6 +61,17 @@ class NodeManager:
         if node:
             node.is_blacked = True
 
+    @property
+    def delegate_num(self) -> int:
+        return self._delegate_num
+
+    @property
+    def all_num(self) -> int:
+        return self._all_num
+
+    def __len__(self) -> int:
+        return self._all_num
+
 
 __node_manager_singleton = NodeManager()
 
