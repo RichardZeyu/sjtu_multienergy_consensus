@@ -5,6 +5,7 @@ from functools import partial
 from logging import getLogger
 
 from ...core.node import Node
+from ...queue.manager import QueueManager
 from .protocol import TCPProtocolV1
 
 L = getLogger(__name__)
@@ -12,13 +13,13 @@ L = getLogger(__name__)
 
 class TCPConnectionHandler:
     local_node: Node
-    queue_manager: typing.Any
+    queue_manager: QueueManager
     protocol_class: typing.Type[TCPProtocolV1]
 
     def __init__(
         self,
         local_node: Node,
-        queue_manager,
+        queue_manager: QueueManager,
         protocol_class: typing.Type[TCPProtocolV1],
     ):
         super().__init__()
@@ -105,9 +106,7 @@ class TCPConnectionHandler:
         writer: asyncio.StreamWriter,
         protocol: TCPProtocolV1,
     ):
-        ingress, egress = self.queue_manager.create_queue(
-            self.local_node, remote
-        )
+        ingress, egress = self.queue_manager.create_queue(remote)
         try:
             self.data_loop(ingress, egress, reader, writer, protocol)
         except:  # noqa
@@ -116,7 +115,7 @@ class TCPConnectionHandler:
             if writer.is_closing():
                 writer.close()
                 await writer.wait_closed()
-            self.queue_manager.close(self.local_node, remote)
+            self.queue_manager.close(remote)
 
     async def data_loop(
         self,
