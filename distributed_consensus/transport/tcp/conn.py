@@ -1,7 +1,7 @@
 import asyncio
 import typing
 from binascii import b2a_hex
-from functools import partial
+from ipaddress import ip_address
 from logging import getLogger
 
 from ...core.node import Node
@@ -18,6 +18,9 @@ class TCPConnectionHandler:
     node_manager: NodeManager
     queue_manager: QueueManager
     protocol_class: typing.Type[TCPProtocolV1]
+    pending_nodes: typing.Set[Node]
+    nodes_incoming: asyncio.Semaphore
+    server: typing.Optional[asyncio.AbstractServer]
 
     def __init__(
         self,
@@ -34,6 +37,8 @@ class TCPConnectionHandler:
         self.logger = L.getChild('TCPConnectionHandler').getChild(
             f'{local_node.id}'
         )
+        self.pending_nodes = set()
+        self.nodes_incoming = asyncio.Semaphore(0)
 
     async def send_handshake(
         self, writer: asyncio.StreamWriter, protocol: TCPProtocolV1,
@@ -106,6 +111,9 @@ class TCPConnectionHandler:
             await writer.wait_closed()
         else:
             assert remote is not None
+            if remote in self.pending_nodes:
+                self.pending_nodes.remove(remote)
+                self.nodes_incoming.release()
             asyncio.create_task(
                 self.dispatch(remote, reader, writer, protocol)
             )
@@ -120,10 +128,12 @@ class TCPConnectionHandler:
         ingress, egress = self.queue_manager.create_queue(remote)
         try:
             self.data_loop(ingress, egress, reader, writer, protocol)
+        except asyncio.CancelledError:
+            self.logger.info('data loop exited due to connection close')
         except:  # noqa
             self.logger.exception('data loop exited with exception')
         finally:
-            if writer.is_closing():
+            if not writer.is_closing():
                 writer.close()
                 await writer.wait_closed()
             self.queue_manager.close(remote)
@@ -144,7 +154,6 @@ class TCPConnectionHandler:
             done, pending = await asyncio.wait(
                 {outbound, inbound}, return_when=asyncio.FIRST_COMPLETED
             )
-            # TODO: handle cancel and other exceptions
             if outbound in done:
                 to_send = outbound.result()
                 writer.write(protocol.encode(to_send))
@@ -154,8 +163,7 @@ class TCPConnectionHandler:
                     bs = inbound.result()
                 except asyncio.IncompleteReadError as ex:
                     self.logger.error(
-                        'recv handshake receive early EOF, got: %s',
-                        b2a_hex(ex.partial),
+                        'recv receive early EOF, got: %s', b2a_hex(ex.partial),
                     )
                     raise
                 while protocol.num_to_read() <= 0:
@@ -171,22 +179,72 @@ class TCPConnectionHandler:
                     reader.readexactly(protocol.num_to_read())
                 )
 
+    async def connect_to(self, node: Node):
+        reader, writer = await asyncio.open_connection(node.ip, node.port)
+        await self.add_connection(reader, writer, node)
 
-async def connect_to(node: Node, h: TCPConnectionHandler):
-    reader, writer = await asyncio.open_connection(node.ip, node.port)
-    await h.add_connection(reader, writer, node)
+    async def connect_in_background(self, node: Node) -> asyncio.Task:
+        return asyncio.create_task(self.connect_to(node))
 
+    async def listen_from(self, node: Node = None) -> asyncio.AbstractServer:
+        node = self.local_node if node is None else node
+        server = await asyncio.start_server(
+            self.add_connection, node.ip, node.port
+        )
+        self.server = server
+        return server
 
-async def handle_client(
-    h: TCPConnectionHandler,
-    reader: asyncio.StreamReader,
-    writer: asyncio.StreamWriter,
-):
-    await h.add_connection(reader, writer)
+    async def wait_micronet_up(self, event: asyncio.Event):
+        await self.nodes_incoming.acquire()
+        if not self.pending_nodes:
+            event.set()
 
+    async def setup_micronet(self) -> asyncio.Event:
+        micronet_ok = asyncio.Event()
+        self.nodes_incoming = asyncio.Semaphore(0)
 
-async def listen_from(node: Node, h: TCPConnectionHandler):
-    server = await asyncio.start_server(
-        partial(handle_client, h), node.ip, node.port
-    )
-    return server
+        def sort_key(n: Node):
+            return (int(ip_address(n.ip)) << 16) | n.port
+
+        over_local: bool = False
+
+        await self.listen_from()
+
+        all_nodes = [
+            node for node in self.node_manager._all if isinstance(node, Node)
+        ]
+
+        for node in sorted(all_nodes, key=sort_key):
+            if node is self.local_node:
+                self.logger.debug(f'node {node.id} is local, continue')
+                over_local = True
+            elif over_local:
+                self.logger.debug(f'connect to node {node.id}')
+                self.connect_in_background(node)
+                self.pending_nodes.add(node)
+            else:
+                self.logger.debug(f'expect node {node.id} to connect')
+                self.pending_nodes.add(node)
+
+        asyncio.create_task(self.wait_micronet_up(micronet_ok))
+
+        return micronet_ok
+
+    async def setup_and_wait_micronet(self, timeout: float) -> bool:
+        event = await self.setup_micronet()
+        try:
+            return await asyncio.wait_for(event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            self.logger.error('setup micronet timeout')
+            await self.tear_down_micronet()
+        return False
+
+    async def tear_down_micronet(self):
+        if self.server:
+            self.server.close()
+            await self.server.wait_closed()
+            self.server = None
+
+        for node in self.node_manager._all:
+            if isinstance(node, Node):
+                self.queue_manager.close(node)
