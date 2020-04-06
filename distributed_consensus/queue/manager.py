@@ -5,12 +5,27 @@ from collections import deque
 from weakref import WeakValueDictionary
 
 from ..core.node import Node
-from ..core.node_manager import NodeManager
+from ..core.node_manager import NodeManager, BaseNode
 from .packet import QueuedPacket
 
 L = logging.getLogger(__name__)
 
 EOC = None
+
+
+NodeFilter = typing.Callable[[BaseNode], bool]
+
+
+def all_node(n: BaseNode) -> bool:
+    return True
+
+
+def delegate_only(n: BaseNode) -> bool:
+    return n.is_delegate
+
+
+def normal_only(n: BaseNode) -> bool:
+    return n.is_normal
 
 
 def clean_queue(queue: asyncio.Queue):
@@ -68,11 +83,15 @@ class QueueManager:
         )
         await egress.put(to_queue)
 
-    async def broadcast(self, pkt: bytes):
+    async def broadcast(self, pkt: bytes, filter_: NodeFilter = all_node):
         for node_id, (_, egress) in self._by_node.items():
-            self.logger.debug(f'broadcast pkt to remote {node_id}')
             remote = self.node_manager.get_node(node_id)
             assert remote is not None
+            if not filter_(remote):
+                self.logger.debug(f'{remote} is filtered out by {filter!r}')
+                continue
+
+            self.logger.debug(f'broadcast pkt to remote {node_id}')
             to_queue = QueuedPacket(
                 origin=self.local,
                 send_to=remote,
@@ -82,11 +101,17 @@ class QueueManager:
             )
             await egress.put(to_queue)
 
-    async def broadcast_forward(self, to_forward: QueuedPacket):
+    async def broadcast_forward(
+        self, to_forward: QueuedPacket, filter_: NodeFilter = all_node
+    ):
         for node_id, (_, egress) in self._by_node.items():
-            self.logger.debug(f'broadcast pkt to remote {node_id}')
             remote = self.node_manager.get_node(node_id)
             assert remote is not None
+            if not filter_(remote):
+                self.logger.debug(f'{remote} is filtered out by {filter!r}')
+                continue
+
+            self.logger.debug(f'broadcast pkt to remote {node_id}')
             to_queue = QueuedPacket(
                 origin=to_forward.origin,
                 send_to=remote,
