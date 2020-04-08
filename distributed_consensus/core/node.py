@@ -1,13 +1,15 @@
 import typing
 
 from .node_manager import AutoRegisterNode
+from OpenSSL.crypto import PKey
+from pprint import pformat
 
 
 class Node(AutoRegisterNode):
     ip: str
     port: int
-    public_key: typing.Any
-    private_key: typing.Any
+    public_key: typing.Union[str, PKey]
+    private_key: typing.Union[str, PKey, None]
 
     def __init__(
         self,
@@ -32,3 +34,21 @@ class Node(AutoRegisterNode):
         self.port = port
         self.public_key = public_key
         self.private_key = private_key
+
+    def to_dict(self) -> typing.Dict[str, typing.Any]:
+        return {
+            'id': self.id,
+            'ip': self.ip,
+            'port': self.port,
+            'public_key': self.public_key,
+            'private_key': self.private_key,
+            'is_delegate': self.is_delegate,
+            'is_normal': self.is_normal,
+            'is_blacked': self.is_blacked,
+        }
+
+    def __repr__(self):
+        dict_str = pformat(self.to_dict(), width=10000, compact=True).strip(
+            "{}"
+        ).replace(', ', ' ').replace(': ', ':')
+        return f'<Node {dict_str}>'

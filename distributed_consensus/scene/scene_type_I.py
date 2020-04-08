@@ -213,3 +213,7 @@ class SceneTypeI(ABC):
         if pkt.data not in self.seen:
             self.seen.add(pkt.data)
         self.queue_manager.broadcast_forward(pkt, filter_=normal_only)
+
+
+class SimpleAdd(SceneTypeI):
+    pass

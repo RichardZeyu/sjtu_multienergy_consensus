@@ -83,7 +83,7 @@ def replace_default_manager(manager: NodeManager):
     return prev
 
 
-def default_manager():
+def default_manager() -> NodeManager:
     global __node_manager_singleton
     return __node_manager_singleton
 
