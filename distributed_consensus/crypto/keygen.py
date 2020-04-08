@@ -17,11 +17,19 @@ def generate_key(
         path.exists() and path.is_dir()
     ), f'invalid key storage path {path!s}'
 
+    pubfile = path / f'{prefix}.pub'
+    keyfile = path / f'{prefix}.key'
+
+    if pubfile.exists():
+        raise FileExistsError(f'{pubfile!s}')
+    if keyfile.exists():
+        raise FileExistsError(f'{keyfile!s}')
+
     key = crypto.PKey()
     key.generate_key(type, bits)
-    with open(path / f'{prefix}.key', 'wb') as f:
+    with open(keyfile, 'wb') as f:
         f.write(crypto.dump_privatekey(crypto.FILETYPE_PEM, key))
-    with open(path / f'{prefix}.pub', 'wb') as f:
+    with open(pubfile, 'wb') as f:
         f.write(crypto.dump_publickey(crypto.FILETYPE_PEM, key))
 
 
