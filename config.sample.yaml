@@ -35,7 +35,7 @@ nodes:
     3:
         transport: tcpv1
         ip: 127.0.0.1
-        port: 11112
+        port: 11113
         private_key_file: "./tests/test_keys/node3.key"
         public_key_file: "./tests/test_keys/node3.pub"
         is_delegate: yes
@@ -49,5 +49,12 @@ scene:
     # 创建场景类实例时需要传入的参数。程序使用keyword方式传参，因此参数顺序并不重要。
     params:
         final_round: 5
-        round_timeout: 10.0
+        round_timeout_sec: 10.0
 
+
+# 传输层参数
+# key为需要配置的传输层（目前只支持tcpv1），值为该层的控制参数
+transport:
+    tcpv1:
+        # 微网建立超时时间。假设在改时间过期前，微网中所有节点均能建立连接
+        micronet_init_sec: 10.0

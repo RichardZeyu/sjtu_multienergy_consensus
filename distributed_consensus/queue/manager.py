@@ -2,7 +2,6 @@ import asyncio
 import logging
 import typing
 from collections import deque
-from weakref import WeakValueDictionary
 
 from ..core.node import Node
 from ..core.node_manager import NodeManager, BaseNode
@@ -41,17 +40,17 @@ def clean_queue(queue: asyncio.Queue):
 
 if typing.TYPE_CHECKING:
     PacketQueue = asyncio.Queue[QueuedPacket]
-    WeakQueueDictionary = WeakValueDictionary[
+    QueueDictionary = typing.Dict[
         int, typing.Tuple[PacketQueue, PacketQueue],
     ]
 else:
     PacketQueue = typing.Any
-    WeakQueueDictionary = typing.Any
+    QueueDictionary = typing.Any
 
 
 class QueueManager:
     local: Node
-    _by_node: WeakQueueDictionary
+    _by_node: QueueDictionary
     _buffered: typing.Deque[QueuedPacket]
     logger: logging.Logger
     node_manager: NodeManager
@@ -59,7 +58,7 @@ class QueueManager:
     def __init__(self, local: Node, node_manager: NodeManager):
         super().__init__()
         self.local = local
-        self._by_node = WeakValueDictionary()
+        self._by_node = dict()
         self.logger = L.getChild(f'QueueManager-{local.id}')
         self._buffered = deque()
         self.node_manager = node_manager

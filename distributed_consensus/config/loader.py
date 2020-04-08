@@ -2,31 +2,36 @@ import importlib
 import logging
 import typing
 from pathlib import Path
+from pprint import pformat
 
 import yaml
 
 from ..core.node import Node
 from ..core.node_manager import NodeManager, default_manager
-from ..crypto import _load_private_key, _load_public_key, _extract_certificate
+from ..crypto import _extract_certificate, _load_private_key, _load_public_key
 from ..crypto.util import read_all_str
 
 L = logging.getLogger(__name__)
 
 
 class Config:
+    local_node: typing.Optional[Node]
     nodes: typing.List[Node]
     node_manager: NodeManager
     log_level: int
     scene_class: typing.Type
     scene_parameters: typing.Dict[str, typing.Any]
     cwd: Path
+    transport_parameters: typing.Dict[str, typing.Dict[str, typing.Any]]
 
     __slots__ = [
+        'local_node',
         'nodes',
         'node_manager',
         'log_level',
         'scene_class',
         'scene_parameters',
+        'transport_parameters',
         'cwd',
     ]
 
@@ -42,6 +47,8 @@ class Config:
         self.nodes = list()
         self.log_level = logging.INFO
         self.cwd = Path(cwd).expanduser().absolute()
+        self.local_node = None
+        self.transport_parameters = {}
 
     def create_node(
         self,
@@ -62,6 +69,11 @@ class Config:
         public_key_path = self.cwd / public_key_file
 
         if is_local:
+            if self.local_node is not None:
+                L.fatal(
+                    f'multiple local nodes, {self.local_node!r} and {node_id}'
+                )
+                raise RuntimeError('multiple local nodes')
             if not private_key_path.is_file():
                 L.fatal(f'cannot open private key {private_key_file!s}')
                 raise FileNotFoundError(str(private_key_path))
@@ -101,6 +113,8 @@ class Config:
                 manager=self.node_manager,
             )
         )
+        if is_local:
+            self.local_node = self.node_manager.get_node(node_id)
 
     @staticmethod
     def parse_log_level(name: str) -> int:
@@ -126,10 +140,18 @@ class Config:
         for node_id, node in obj.get('nodes', {}).items():
             ins.create_node(node_id, is_local=local_node_id == node_id, **node)
 
+        if ins.node_manager.get_node(local_node_id) is None:
+            L.fatal(f'local node {local_node_id} not defined in nodes section')
+            raise RuntimeError(
+                f'local node {local_node_id} not defined in nodes section'
+            )
+
         ins.log_level = cls.parse_log_level(obj.get('log-level', 'info'))
         if 'scene' not in obj or 'class' not in obj['scene']:
             L.fatal(f'cannot find scene.class section in {yaml_file.name}')
             raise KeyError('scene.class')
+
+        ins.transport_parameters = obj.get('transport', {})
 
         scene = obj['scene']
         ins.scene_parameters = obj.get('params', {})
@@ -143,16 +165,25 @@ class Config:
 
         return ins
 
+    def __repr__(self):
+        conf = (
+            pformat(
+                {
+                    k: getattr(self, k)
+                    for k in self.__dir__()
+                    if not k.startswith('__')
+                    and not callable(getattr(self, k))
+                },
+                width=10000,
+                compact=True,
+            )
+            .replace(', ', ' ')
+            .replace(': ', ':')
+        )
+        return f'<Config {conf}>'
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
-    from pprint import pprint
-
-    config = Config.from_yaml(0, 'config.sample.yaml')
-    pprint(
-        {
-            k: getattr(config, k)
-            for k in config.__dir__()
-            if not k.startswith('__')
-        }
-    )
+    config = Config.from_yaml(1, 'config.sample.yaml')
+    print(config)

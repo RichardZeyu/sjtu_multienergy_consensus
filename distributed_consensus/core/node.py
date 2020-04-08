@@ -3,6 +3,7 @@ import typing
 from .node_manager import AutoRegisterNode
 from OpenSSL.crypto import PKey
 from pprint import pformat
+from ipaddress import ip_address
 
 
 class Node(AutoRegisterNode):
@@ -48,7 +49,16 @@ class Node(AutoRegisterNode):
         }
 
     def __repr__(self):
-        dict_str = pformat(self.to_dict(), width=10000, compact=True).strip(
-            "{}"
-        ).replace(', ', ' ').replace(': ', ':')
+        dict_str = (
+            pformat(self.to_dict(), width=10000, compact=True)
+            .strip("{}")
+            .replace(', ', ' ')
+            .replace(': ', ':')
+        )
         return f'<Node {dict_str}>'
+
+    def sort_key(self) -> int:
+        return (int(ip_address(self.ip)) << 16) | self.port
+
+    def __lt__(self, value):
+        return self.sort_key() < value.sort_key()

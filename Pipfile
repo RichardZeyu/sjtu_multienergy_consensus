@@ -16,6 +16,8 @@ pytest = "*"
 [packages]
 click = "*"
 pyopenssl = "*"
+coloredlogs = "*"
+colorama = "*"
 
 [requires]
 python_version = "3.8"

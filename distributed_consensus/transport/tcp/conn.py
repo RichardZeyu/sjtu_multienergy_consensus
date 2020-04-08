@@ -1,13 +1,12 @@
 import asyncio
+import random
 import typing
 from binascii import b2a_hex
-from ipaddress import ip_address
 from logging import getLogger
 
 from ...core.node import Node
 from ...core.node_manager import NodeManager
-from ...queue.manager import QueueManager
-from ...queue.packet import QueuedPacket
+from ...queue.manager import PacketQueue, QueueManager
 from .protocol import TCPProtocolV1
 
 L = getLogger(__name__)
@@ -19,6 +18,7 @@ class TCPConnectionHandler:
     queue_manager: QueueManager
     protocol_class: typing.Type[TCPProtocolV1]
     pending_nodes: typing.Set[Node]
+    pending_connectors: typing.Set[asyncio.Task]
     nodes_incoming: asyncio.Semaphore
     server: typing.Optional[asyncio.AbstractServer]
 
@@ -38,6 +38,7 @@ class TCPConnectionHandler:
             f'{local_node.id}'
         )
         self.pending_nodes = set()
+        self.pending_connectors = set()
         self.nodes_incoming = asyncio.Semaphore(0)
 
     async def send_handshake(
@@ -75,6 +76,19 @@ class TCPConnectionHandler:
         remote = protocol.parse_handshake(bs)
         return remote
 
+    def is_remote_valid(self, remote: typing.Optional[Node]) -> bool:
+        ok = True
+        if remote is None:
+            self.logger.warn(f'remote is None')
+            ok = False
+        elif remote.is_blacked:
+            self.logger.warn(f'remote {remote.id} is blocked, disconnect')
+            ok = False
+        elif not self.local_node.is_delegate and remote.is_normal:
+            self.logger.warn(f'remote {remote.id} is normal node, drop')
+            ok = False
+        return ok
+
     async def add_connection(
         self,
         reader: asyncio.StreamReader,
@@ -99,14 +113,12 @@ class TCPConnectionHandler:
         )
         if remote is None:
             remote = await self.wait_handshake(reader, protocol)
-            ok = remote is not None
-            if remote is not None and remote.is_blacked:
-                self.logger.warn(f'remote {remote.id} is blocked, disconnect')
-                ok = False
+            ok = self.is_remote_valid(remote)
         else:
+            assert self.is_remote_valid(remote)  # should be a bug
             ok = await self.send_handshake(writer, protocol)
         if not ok:
-            self.logger.warn('handshake failed, close connection')
+            self.logger.warn('handshake failed or invalid remote, drop')
             writer.close()
             await writer.wait_closed()
         else:
@@ -127,11 +139,26 @@ class TCPConnectionHandler:
     ):
         ingress, egress = self.queue_manager.create_queue(remote)
         try:
-            self.data_loop(ingress, egress, reader, writer, protocol)
+            await self.data_loop(ingress, egress, reader, writer, protocol)
         except asyncio.CancelledError:
-            self.logger.info('data loop exited due to connection close')
+            self.logger.info(
+                f'{remote.id} data loop exited due to initiative close'
+            )
+        except asyncio.IncompleteReadError:
+            self.logger.warn(
+                f'{remote.id} data loop exited due to disconnection'
+            )
+            if remote.is_delegate and remote > self.local_node:
+                self.logger.info(
+                    f'{remote.id} delegate disconnection, try reconnecting'
+                )
+                self.connect_in_background(remote)
+            else:
+                self.logger.info(
+                    f'{remote.id} disconnection, expect incoming reconnection'
+                )
         except:  # noqa
-            self.logger.exception('data loop exited with exception')
+            self.logger.warn('data loop exited with exception', exc_info=True)
         finally:
             if not writer.is_closing():
                 writer.close()
@@ -140,16 +167,22 @@ class TCPConnectionHandler:
 
     async def data_loop(
         self,
-        ingress: asyncio.Queue[QueuedPacket],
-        egress: asyncio.Queue[QueuedPacket],
+        ingress: PacketQueue,
+        egress: PacketQueue,
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
         protocol: TCPProtocolV1,
     ):
-        outbound = asyncio.create_task(egress.get())
-        inbound = asyncio.create_task(
-            reader.readexactly(protocol.num_to_read())
-        )
+        def out_task():
+            return asyncio.create_task(egress.get())
+
+        def in_task():
+            return asyncio.create_task(
+                reader.readexactly(protocol.num_to_read())
+            )
+
+        outbound = out_task()
+        inbound = in_task()
         while True:
             done, pending = await asyncio.wait(
                 {outbound, inbound}, return_when=asyncio.FIRST_COMPLETED
@@ -157,7 +190,7 @@ class TCPConnectionHandler:
             if outbound in done:
                 to_send = outbound.result()
                 writer.write(protocol.encode(to_send))
-                outbound = asyncio.create_task(egress.get())
+                outbound = out_task()
             if inbound in done:
                 try:
                     bs = inbound.result()
@@ -175,16 +208,44 @@ class TCPConnectionHandler:
                         break
                     else:
                         await ingress.put(pkt)
-                inbound = asyncio.create_task(
-                    reader.readexactly(protocol.num_to_read())
-                )
+                inbound = in_task()
 
-    async def connect_to(self, node: Node):
-        reader, writer = await asyncio.open_connection(node.ip, node.port)
+    async def connect_to(self, node: Node, retry=None):
+        wait = 1.0
+        while True:
+            try:
+                reader, writer = await asyncio.open_connection(
+                    node.ip, node.port
+                )
+                break
+            except:  # noqa
+                self.logger.warn(
+                    f'connect to node {node.id} {node.ip}:{node.port} failed',
+                    exc_info=True,
+                )
+            if retry is not None:
+                if retry > 0:
+                    retry -= 1
+                else:
+                    self.logger.error(
+                        f'fail to connect {node.id} {node.ip}:{node.port}'
+                    )
+                    return
+            if wait < 30:
+                wait = int(wait) * 2 + random.random()
+            else:
+                wait = 30 + random.random()
+            self.logger.info(
+                f'retry connecting node {node.id} in {wait:.3f} seconds'
+            )
+            await asyncio.sleep(wait)
+
         await self.add_connection(reader, writer, node)
 
-    async def connect_in_background(self, node: Node) -> asyncio.Task:
-        return asyncio.create_task(self.connect_to(node))
+    def connect_in_background(self, node: Node) -> asyncio.Task:
+        task = asyncio.create_task(self.connect_to(node))
+        self.pending_connectors.add(task)
+        return task
 
     async def listen_from(self, node: Node = None) -> asyncio.AbstractServer:
         node = self.local_node if node is None else node
@@ -195,16 +256,16 @@ class TCPConnectionHandler:
         return server
 
     async def wait_micronet_up(self, event: asyncio.Event):
-        await self.nodes_incoming.acquire()
-        if not self.pending_nodes:
-            event.set()
+        while True:
+            await self.nodes_incoming.acquire()
+            if not self.pending_nodes:
+                event.set()
+                break
+        await self.clean_background_connector()
 
     async def setup_micronet(self) -> asyncio.Event:
         micronet_ok = asyncio.Event()
         self.nodes_incoming = asyncio.Semaphore(0)
-
-        def sort_key(n: Node):
-            return (int(ip_address(n.ip)) << 16) | n.port
 
         over_local: bool = False
 
@@ -214,10 +275,12 @@ class TCPConnectionHandler:
             node for node in self.node_manager._all if isinstance(node, Node)
         ]
 
-        for node in sorted(all_nodes, key=sort_key):
+        for node in sorted(all_nodes):
             if node is self.local_node:
                 self.logger.debug(f'node {node.id} is local, continue')
                 over_local = True
+            elif not self.local_node.is_delegate and node.is_normal:
+                self.logger.debug(f'node {node.id} is normal node, ignore')
             elif over_local:
                 self.logger.debug(f'connect to node {node.id}')
                 self.connect_in_background(node)
@@ -239,12 +302,42 @@ class TCPConnectionHandler:
             await self.tear_down_micronet()
         return False
 
+    async def clean_background_connector(self, cancel_all=False):
+        self.logger.debug(f'background connector {self.pending_connectors}')
+        if cancel_all:
+            self.logger.debug(f'cancel all connectors')
+            for task in self.pending_connectors:
+                if not task.cancelled:
+                    self.logger.debug(f'cancel task {task}')
+                    task.cancel()
+
+        done = {task for task in self.pending_connectors if task.done()}
+        self.logger.debug(f'completed connector {done}')
+        for task in done:
+            self.pending_connectors.remove(task)
+            if task.cancelled():
+                self.logger.debug(f'task {task} already cancelled')
+                continue
+            elif task.done():
+                try:
+                    self.logger.debug(
+                        f'task {task} done with result {task.result()}'
+                    )
+                except:  # noqa
+                    self.logger.exception(f'task {task} encounters exception')
+                continue
+
     async def tear_down_micronet(self):
+        self.logger.debug('tear down micronet')
         if self.server:
+            self.logger.debug('closing listening')
             self.server.close()
             await self.server.wait_closed()
             self.server = None
 
+        await self.clean_background_connector(cancel_all=True)
+
+        self.logger.debug('closing queue')
         for node in self.node_manager._all:
             if isinstance(node, Node):
                 self.queue_manager.close(node)
