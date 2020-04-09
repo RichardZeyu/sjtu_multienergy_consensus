@@ -1,5 +1,6 @@
 import typing
 from ..core.node_manager import BaseNode
+from binascii import b2a_hex
 
 
 class QueuedPacket(typing.NamedTuple):
@@ -11,4 +12,13 @@ class QueuedPacket(typing.NamedTuple):
 
     @property
     def is_forwarding(self) -> bool:
-        return self.origin != self.received_from
+        return (
+            self.received_from is not None
+            and self.origin != self.received_from
+        )
+
+    def __repr__(self):
+        forward = f'{self.received_from.id if self.is_forwarding else "="}'
+        path = f'{self.origin.id}-{forward}->{self.send_to.id}'
+
+        return f'<QueuedPacket {path} data="{b2a_hex(self.data)!s}">'

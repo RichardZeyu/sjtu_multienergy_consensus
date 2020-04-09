@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Optional, Any
+from typing import TYPE_CHECKING, Optional, Any, Set
 from weakref import WeakSet, WeakValueDictionary
 
 
@@ -60,6 +60,9 @@ class NodeManager:
         node = self.get_node(id)
         if node:
             node.is_blacked = True
+
+    def nodes(self) -> Set[BaseNode]:
+        return set(self._all)
 
     @property
     def delegate_num(self) -> int:

@@ -77,7 +77,8 @@ class TCPProtocolV1:
 
     def decode(self, bs: bytes) -> typing.Optional[QueuedPacket]:
         assert self.remote is not None, 'handshake incomplete'
-        self.feed_buffer(bs)
+        if bs:
+            self.feed_buffer(bs)
 
         header = self.peek_header()
         if header is None:
@@ -118,7 +119,7 @@ class TCPProtocolV1:
         )
 
     def encode(self, pkt: QueuedPacket) -> bytes:
-        if pkt.is_forwarding:
+        if pkt.origin != self.local:
             assert pkt.full_packet is not None
             return pkt.full_packet
 

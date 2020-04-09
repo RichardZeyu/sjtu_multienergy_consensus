@@ -69,11 +69,6 @@ class Config:
         public_key_path = self.cwd / public_key_file
 
         if is_local:
-            if self.local_node is not None:
-                L.fatal(
-                    f'multiple local nodes, {self.local_node!r} and {node_id}'
-                )
-                raise RuntimeError('multiple local nodes')
             if not private_key_path.is_file():
                 L.fatal(f'cannot open private key {private_key_file!s}')
                 raise FileNotFoundError(str(private_key_path))
@@ -101,20 +96,24 @@ class Config:
         if node_id < 0 or node_id > 0xFFFFFFFF:
             raise ValueError(f'invalid node id {node_id}')
 
-        self.nodes.append(
-            Node(
-                node_id,
-                ip,
-                port,
-                public_key,
-                private_key,
-                is_delegate=is_delegate,
-                is_normal=is_normal,
-                manager=self.node_manager,
-            )
+        node = Node(
+            node_id,
+            ip,
+            port,
+            public_key,
+            private_key,
+            is_delegate=is_delegate,
+            is_normal=is_normal,
+            manager=self.node_manager,
         )
+        self.nodes.append(node)
         if is_local:
-            self.local_node = self.node_manager.get_node(node_id)
+            if self.local_node is not None:
+                L.fatal(
+                    f'multiple local nodes, {self.local_node!r} and {node!r}'
+                )
+                raise RuntimeError('multiple local nodes')
+            self.local_node = node
 
     @staticmethod
     def parse_log_level(name: str) -> int:

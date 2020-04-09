@@ -101,7 +101,7 @@ class QueueManager:
             await egress.put(to_queue)
 
     async def broadcast_forward(
-        self, to_forward: QueuedPacket, filter_: NodeFilter = all_node
+        self, to_forward: QueuedPacket, filter_: NodeFilter = all_node, loopback=False
     ):
         for node_id, (_, egress) in self._by_node.items():
             remote = self.node_manager.get_node(node_id)
@@ -109,12 +109,15 @@ class QueueManager:
             if not filter_(remote):
                 self.logger.debug(f'{remote} is filtered out by {filter!r}')
                 continue
+            if not loopback and to_forward.origin == remote:
+                self.logger.debug(f'{remote} is origin, no loopback')
+                continue
 
-            self.logger.debug(f'broadcast pkt to remote {node_id}')
+            self.logger.debug(f'forward pkt to remote {node_id}')
             to_queue = QueuedPacket(
                 origin=to_forward.origin,
                 send_to=remote,
-                received_from=to_forward.received_from,
+                received_from=self.local,
                 data=to_forward.data,
                 full_packet=to_forward.full_packet,
             )
@@ -139,7 +142,7 @@ class QueueManager:
 
     async def receive_one(
         self, timeout: typing.Optional[float] = None
-    ) -> QueuedPacket:
+    ) -> typing.Optional[QueuedPacket]:
         pkt = self.receive_one_no_wait()
         if pkt is not None:
             return pkt
@@ -164,11 +167,13 @@ class QueueManager:
         for task in done:
             try:
                 pkt = task.result()
-                assert pkt is not None
-                self._buffered.append(pkt)
+                if pkt is not None:
+                    self._buffered.append(pkt)
+            except asyncio.TimeoutError:
+                pass
             except:  # noqa
                 self.logger.exception(f'exception occurred when in {task!r}')
-        return self._buffered.popleft()
+        return self._buffered.popleft() if self._buffered else None
 
     def _check_dup_channel(self, remote: Node):
         if remote.id in self._by_node:

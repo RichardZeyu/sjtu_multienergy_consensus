@@ -189,7 +189,9 @@ class TCPConnectionHandler:
             )
             if outbound in done:
                 to_send = outbound.result()
-                writer.write(protocol.encode(to_send))
+                to_send = protocol.encode(to_send)
+                writer.write(to_send)
+                self.logger.debug(f'send {b2a_hex(to_send)!s}')
                 outbound = out_task()
             if inbound in done:
                 try:
@@ -198,8 +200,11 @@ class TCPConnectionHandler:
                     self.logger.error(
                         'recv receive early EOF, got: %s', b2a_hex(ex.partial),
                     )
-                    raise
-                while protocol.num_to_read() <= 0:
+                    self.logger.info('remote closed transportation.')
+                    break
+                self.logger.debug(f'received {b2a_hex(bs)!s}')
+
+                while True:
                     pkt = protocol.decode(bs)
                     if pkt is None:
                         assert (
@@ -208,6 +213,10 @@ class TCPConnectionHandler:
                         break
                     else:
                         await ingress.put(pkt)
+                    # in case multiple packets received in one reading
+                    # parse as many packets as possible
+                    if protocol.num_to_read() > 0:
+                        break
                 inbound = in_task()
 
     async def connect_to(self, node: Node, retry=None):
@@ -272,7 +281,7 @@ class TCPConnectionHandler:
         await self.listen_from()
 
         all_nodes = [
-            node for node in self.node_manager._all if isinstance(node, Node)
+            node for node in self.node_manager.nodes() if isinstance(node, Node)
         ]
 
         for node in sorted(all_nodes):
@@ -338,6 +347,6 @@ class TCPConnectionHandler:
         await self.clean_background_connector(cancel_all=True)
 
         self.logger.debug('closing queue')
-        for node in self.node_manager._all:
+        for node in self.node_manager.nodes():
             if isinstance(node, Node):
                 self.queue_manager.close(node)
