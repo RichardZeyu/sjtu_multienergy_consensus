@@ -193,10 +193,10 @@ class SceneTypeI(ABC):
             # step 2 ~ 5, wrapped by receiving loop
             self.round(round_end)
 
-            # wait 1 second for possible timing error. otherwise quick nodes
+            # add a gap for possible timing error. otherwise quick nodes
             # will send packet for next round but slow nodes may drop them due
             # to invalid round id
-            sleep(1)
+            sleep(2)
 
             self.round_id += 1
         self.scene_complete()

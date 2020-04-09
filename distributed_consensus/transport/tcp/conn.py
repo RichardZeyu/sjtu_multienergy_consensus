@@ -183,6 +183,7 @@ class TCPConnectionHandler:
 
         outbound = out_task()
         inbound = in_task()
+        closing = False
         while True:
             done, pending = await asyncio.wait(
                 {outbound, inbound}, return_when=asyncio.FIRST_COMPLETED
@@ -197,15 +198,14 @@ class TCPConnectionHandler:
                 try:
                     bs = inbound.result()
                 except asyncio.IncompleteReadError as ex:
-                    self.logger.error(
-                        'recv receive early EOF, got: %s', b2a_hex(ex.partial),
-                    )
-                    self.logger.info('remote closed transportation.')
-                    break
+                    self.logger.info('remote closing connection.')
+                    bs = ex.partial
+                    closing = True
                 self.logger.debug(f'received {b2a_hex(bs)!s}')
 
                 while True:
                     pkt = protocol.decode(bs)
+                    bs = b''
                     if pkt is None:
                         assert (
                             protocol.num_to_read() > 0
@@ -213,11 +213,14 @@ class TCPConnectionHandler:
                         break
                     else:
                         await ingress.put(pkt)
-                    # in case multiple packets received in one reading
+                    # in case multiple packets received in one reading,
                     # parse as many packets as possible
                     if protocol.num_to_read() > 0:
                         break
-                inbound = in_task()
+                if closing:
+                    break
+                else:
+                    inbound = in_task()
 
     async def connect_to(self, node: Node, retry=None):
         wait = 1.0
@@ -281,7 +284,9 @@ class TCPConnectionHandler:
         await self.listen_from()
 
         all_nodes = [
-            node for node in self.node_manager.nodes() if isinstance(node, Node)
+            node
+            for node in self.node_manager.nodes()
+            if isinstance(node, Node)
         ]
 
         for node in sorted(all_nodes):

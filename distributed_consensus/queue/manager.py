@@ -153,6 +153,11 @@ class QueueManager:
             )
             for node_id, (ingress, _) in self._by_node.items()
         }
+
+        if not tasks:
+            self.logger.warn('no active queue, in closing or reconnecting')
+            return None
+
         done: typing.Set[asyncio.Future]
         pending: typing.Set[asyncio.Future]
         done, pending = await asyncio.wait(

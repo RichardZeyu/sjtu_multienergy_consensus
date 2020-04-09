@@ -40,6 +40,4 @@ async def async_main():
 
 
 def bootstrap():
-    # loop = asyncio.get_event_loop()
     asyncio.run(async_main())
-    print('done')

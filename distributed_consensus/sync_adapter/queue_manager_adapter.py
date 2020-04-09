@@ -2,6 +2,7 @@ import asyncio
 import logging
 import typing
 from datetime import datetime, timedelta
+from time import sleep
 
 from ..queue.manager import NodeFilter, QueueManager, all_node
 from ..queue.packet import QueuedPacket
@@ -43,6 +44,11 @@ class QueueManagerAdapter:
             except asyncio.TimeoutError:
                 break
             now = datetime.utcnow()
+            if (run_till - now).total_seconds() > 0.5:
+                # add a little sleep to avoid too much retrying if all other
+                # nodes are reconnecting.
+                # TODO use event or some other sync primitives
+                sleep(0.5)
         return None
 
     def drop_node(self, node):
