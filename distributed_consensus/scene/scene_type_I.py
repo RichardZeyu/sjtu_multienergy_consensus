@@ -34,6 +34,7 @@ class SceneTypeI(ABC):
     local: Node
     transport_loop: BaseEventLoop
     adapter: QueueManagerAdapter
+    local_delegate_data: bytes
 
     normal_phase_done: bool
     scene_end: bool
@@ -108,7 +109,7 @@ class SceneTypeI(ABC):
     ):
         received.clear()
         for node in self.node_manager.nodes():
-            if expected(node) and node != self.local:
+            if expected(node) and node != self.local and not node.is_blacked:
                 received[node.id] = set()
 
     def drop_evil_nodes(
@@ -134,6 +135,9 @@ class SceneTypeI(ABC):
         self, received: typing.Dict[int, typing.Set[QueuedPacket]]
     ) -> typing.Optional[bytes]:
         counter: typing.Counter[bytes] = Counter()
+        # count local_delegate_data if local node is also delegate
+        if self.local.is_delegate:
+            counter.update({self.local_delegate_data: 1})
         counter.update(
             [
                 list(pkts)[0].data
@@ -150,6 +154,14 @@ class SceneTypeI(ABC):
         data = self.normal_data()
         self.seen.add((self.local.id, data))
         self.adapter.broadcast(data, filter_=delegate_only)
+
+    def delegate_send(self):
+        data = self.delegate_data()
+        self.adapter.broadcast(data, filter_=normal_only)
+        # no loopback forwarding so local node will not receive this data from
+        # micronet. remember data for normal phase (if local node is also a
+        # normal node)
+        self.local_delegate_data = data
 
     def run(self):
         self.round_id = 1
@@ -171,14 +183,12 @@ class SceneTypeI(ABC):
                     f'received normal data {self.received_normal_data}'
                 )
                 self.delegate_update()
-                # does not set self.scene_end immediately to handle nodes have
+                # does not set self.scene_end immediately to handle nodes with
                 # both delegate and normal roles, in which case normal packet
                 # receiving phase still need to run after local delegate
                 # decides to exit
                 local_delegate_ending = self.check_end()
-                self.adapter.broadcast(
-                    self.delegate_data(), filter_=normal_only
-                )
+                self.delegate_send()
                 self.init_received(self.received_normal_data, normal_only)
 
             # first round doesn't need normal data update
@@ -216,7 +226,7 @@ class SceneTypeI(ABC):
             # step 2 & 3
             self.normal_node_action(pkt)
             # step 4
-            self.delegate_forward(pkt)
+            self.delegate_node_action(pkt)
 
     def normal_node_action(self, pkt: QueuedPacket):
         if self.normal_phase_done:
@@ -254,7 +264,7 @@ class SceneTypeI(ABC):
             self.normal_send()
             self.scene_end = self.check_end_in_data(data)
 
-    def delegate_forward(self, pkt: QueuedPacket):
+    def delegate_node_action(self, pkt: QueuedPacket):
         if not self.local.is_delegate:
             self.logger.debug("local is not delegate node, abort",)
             return
@@ -306,6 +316,12 @@ class SimpleAdd(SceneTypeI):
             self.round_id = round_id
             self.value = value
             self.is_end = is_end
+
+        def __repr__(self):
+            return (
+                f'<{self.data_type.name} round_id={self.round_id} '
+                + f'value={self.value}{" end" if self.is_end else ""}>'
+            )
 
         @classmethod
         def from_bytes(cls, bs: bytes) -> 'SimpleAdd._Data':
@@ -369,7 +385,9 @@ class SimpleAdd(SceneTypeI):
 
     def is_packet_valid(self, pkt: QueuedPacket) -> bool:
         try:
-            return self._Data.from_bytes(pkt.data).round_id == self.round_id
+            data = self._Data.from_bytes(pkt.data)
+            self.logger.debug('got scene data %r', data)
+            return data.round_id == self.round_id
         except:
             self.logger.warn(f'cannot parse {pkt}', exc_info=True)
             return False
