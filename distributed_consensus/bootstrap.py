@@ -22,10 +22,15 @@ async def async_main():
         timeout=c.transport_parameters['tcpv1']['micronet_init_sec']
     ):
         L.info('micronet established')
-        while True:
-            await asyncio.sleep(10000)
-        # scene = c.scene_class(**c.scene_parameters)
-        # await scene.run()
+        # while True:
+            # await asyncio.sleep(10000)
+        scene = c.scene_class(
+            local=c.local_node,
+            queue_manager=queue,
+            node_manager=c.node_manager,
+            **c.scene_parameters
+        )
+        await scene.run()
 
 
 def bootstrap():

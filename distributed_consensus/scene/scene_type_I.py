@@ -2,6 +2,7 @@ import typing
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 from collections import Counter
+import struct
 
 from ..core.node import Node
 from ..core.node_manager import NodeManager
@@ -40,6 +41,7 @@ class SceneTypeI(ABC):
         self.received_normal_data = dict()
         self.seen = set()
         self.logger = L.getChild(f'{self.__class__.__name__}-{self.local.id}')
+        self.scene_end = False
 
     @abstractmethod
     def check_end(self) -> bool:
@@ -58,7 +60,7 @@ class SceneTypeI(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def normal_update(self):
+    def normal_update(self, data: bytes):
         raise NotImplementedError()
 
     @abstractmethod
@@ -134,7 +136,7 @@ class SceneTypeI(ABC):
             self.received_delegate_data.clear()
             self.seen.clear()
             self.round_id += 1
-            now = datetime().utcnow()
+            now = datetime.utcnow()
             round_end = now + timedelta(seconds=self.round_timeout())
             self.logger.info(
                 f'round {self.round_id} begin, will end by {round_end}'
@@ -196,7 +198,7 @@ class SceneTypeI(ABC):
             self.queue_manager.broadcast(
                 self.normal_data(), filter_=delegate_only
             )
-            self.check_end_in_data(data)
+            self.scene_end = self.check_end_in_data(data)
 
     def delegate_forward(self, pkt: QueuedPacket):
         if not self.local.is_delegate:
@@ -216,4 +218,66 @@ class SceneTypeI(ABC):
 
 
 class SimpleAdd(SceneTypeI):
-    pass
+    final_round: int
+    round_timeout_sec: float
+
+    # packet: round ID 4B, value 4B, end flag 1B
+    pkt_fmt: str = '>LLB'
+
+    normal_value: int
+    delegate_value: int
+
+    def __init__(
+        self,
+        local,
+        node_manager,
+        queue_manager,
+        final_round,
+        round_timeout_sec,
+    ):
+        super().__init__(local, node_manager, queue_manager)
+        self.final_round = final_round
+        self.round_timeout_sec = round_timeout_sec
+        self.normal_value = 0
+
+    def check_end(self) -> bool:
+        return self.round_id >= self.final_round
+
+    def check_end_in_data(self, data: bytes) -> bool:
+        try:
+            return struct.unpack(self.pkt_fmt, data)[2] > 0
+        except:
+            return False
+
+    def delegate_update(self):
+        self.delegate_value = 0
+        for node_id, pkts in self.received_normal_data:
+            # this method is supposed to be called after clearup evil nodes
+            assert len(pkts) == 1
+            self.delegate_value += struct.unpack(self.pkt_fmt, pkts[0].data)[1]
+
+    def normal_initiate(self):
+        self.normal_value = 1
+
+    def normal_update(self, data: bytes):
+        self.normal_value = struct.unpack(self.pkt_fmt, data)[1] + 1
+
+    def round_timeout(self) -> float:
+        return self.round_timeout_sec
+
+    def normal_data(self) -> bytes:
+        return struct.pack(self.pkt_fmt, self.round_id, self.normal_value, 0)
+
+    def delegate_data(self) -> bytes:
+        return struct.pack(
+            self.pkt_fmt,
+            self.round_id,
+            self.delegate_value,
+            1 if self.check_end() else 0,
+        )
+
+    def is_packet_valid(self, pkt: QueuedPacket) -> bool:
+        try:
+            return struct.unpack(self.pkt_fmt, pkt.data)[0] == self.round_id
+        except:
+            return False

@@ -146,7 +146,7 @@ class Config:
                 f'local node {local_node_id} not defined in nodes section'
             )
 
-        ins.log_level = cls.parse_log_level(obj.get('log-level', 'info'))
+        ins.log_level = cls.parse_log_level(obj.get('log_level', 'info'))
         if 'scene' not in obj or 'class' not in obj['scene']:
             L.fatal(f'cannot find scene.class section in {yaml_file.name}')
             raise KeyError('scene.class')
@@ -154,7 +154,7 @@ class Config:
         ins.transport_parameters = obj.get('transport', {})
 
         scene = obj['scene']
-        ins.scene_parameters = obj.get('params', {})
+        ins.scene_parameters = scene.get('params', {})
         try:
             mod, clas = scene['class'].rsplit('.', 1)
             scene_module = importlib.import_module(mod)

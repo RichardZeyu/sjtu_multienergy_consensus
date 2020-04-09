@@ -2,7 +2,7 @@
 #  https://docs.ansible.com/ansible/latest/reference_appendices/YAMLSyntax.html
 
 # 运行程序时日志打印级别
-log-level: debug
+log_level: debug
 
 # 所有节点配置在此对象中。对象每个key是一个Node的ID，为32位无符号整数范围内的整数。
 # 值含义见各项注释。
