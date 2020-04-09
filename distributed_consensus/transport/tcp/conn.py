@@ -181,19 +181,34 @@ class TCPConnectionHandler:
                 reader.readexactly(protocol.num_to_read())
             )
 
+        def retrieve_exception_cb(task: asyncio.Task):
+            """ retrieve potential result/exception from orphan tasks """
+            try:
+                self.logger.debug(
+                    f'orphan task {task!r} done with {task.result()}'
+                )
+            except:
+                self.logger.debug(
+                    f'orphan task {task!r} got exception', exc_info=True
+                )
+
         outbound = out_task()
         inbound = in_task()
         closing = False
-        while True:
+        while not closing:
             done, pending = await asyncio.wait(
                 {outbound, inbound}, return_when=asyncio.FIRST_COMPLETED
             )
             if outbound in done:
-                to_send = outbound.result()
-                to_send = protocol.encode(to_send)
-                writer.write(to_send)
-                self.logger.debug(f'send {b2a_hex(to_send)!s}')
-                outbound = out_task()
+                try:
+                    to_send = outbound.result()
+                except asyncio.CancelledError:
+                    closing = True
+                else:
+                    to_send = protocol.encode(to_send)
+                    writer.write(to_send)
+                    self.logger.debug(f'send {b2a_hex(to_send)!s}')
+                    outbound = out_task()
             if inbound in done:
                 try:
                     bs = inbound.result()
@@ -217,10 +232,12 @@ class TCPConnectionHandler:
                     # parse as many packets as possible
                     if protocol.num_to_read() > 0:
                         break
-                if closing:
-                    break
-                else:
+                if not closing:
                     inbound = in_task()
+        for t in [inbound, outbound]:
+            if not t.done():
+                # add callback to eliminate "exception not retrieve" error
+                t.add_done_callback(retrieve_exception_cb)
 
     async def connect_to(self, node: Node, retry=None):
         wait = 1.0
