@@ -1,5 +1,11 @@
 from .queue_manager_adapter import QueueManagerAdapter
-from ..queue.manager import all_node, delegate_only, normal_only, QueuedPacket
+from ..queue.manager import (
+    all_node,
+    delegate_only,
+    normal_only,
+    QueuedPacket,
+    NodeFilter,
+)
 
 __all__ = [
     'QueueManagerAdapter',
@@ -7,4 +13,5 @@ __all__ = [
     'delegate_only',
     'normal_only',
     'QueuedPacket',
+    'NodeFilter',
 ]

@@ -4,7 +4,7 @@ import typing
 from collections import deque
 
 from ..core.node import Node
-from ..core.node_manager import NodeManager, BaseNode
+from ..core.node_manager import BaseNode, NodeManager
 from .packet import QueuedPacket
 
 L = logging.getLogger(__name__)
@@ -101,7 +101,10 @@ class QueueManager:
             await egress.put(to_queue)
 
     async def broadcast_forward(
-        self, to_forward: QueuedPacket, filter_: NodeFilter = all_node, loopback=False
+        self,
+        to_forward: QueuedPacket,
+        filter_: NodeFilter = all_node,
+        loopback=False,
     ):
         for node_id, (_, egress) in self._by_node.items():
             remote = self.node_manager.get_node(node_id)

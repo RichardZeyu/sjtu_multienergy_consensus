@@ -1,40 +1,27 @@
 import logging
 import struct
 import typing
-from abc import ABC, abstractmethod
-from asyncio import BaseEventLoop
-from collections import Counter
+from abc import abstractmethod
 from datetime import datetime, timedelta
-from enum import Enum
 from time import sleep
 
 from ..core.node import Node
-from ..core.node_manager import BaseNode, NodeManager
+from ..core.node_manager import NodeManager
 from ..sync_adapter import (
     QueuedPacket,
     QueueManagerAdapter,
     delegate_only,
     normal_only,
 )
+from .scene import AbstractScene, DataType, NodeDataMap
 
 L = logging.getLogger(__name__)
 
 
-class DataType(Enum):
-    DelegateToNormal = 1
-    NormalToDelegate = 2
-
-
-class SceneTypeI(ABC):
+class SceneTypeI(AbstractScene):
     round_id: int
-    node_manager: NodeManager
-    received_normal_data: typing.Dict[int, typing.Set[QueuedPacket]]
-    received_delegate_data: typing.Dict[int, typing.Set[QueuedPacket]]
-    seen: typing.Set[typing.Tuple[int, bytes]]
-    local: Node
-    transport_loop: BaseEventLoop
-    adapter: QueueManagerAdapter
-    local_delegate_data: bytes
+    received_normal_data: NodeDataMap
+    received_delegate_data: NodeDataMap
 
     normal_phase_done: bool
     scene_end: bool
@@ -46,18 +33,14 @@ class SceneTypeI(ABC):
         adapter: QueueManagerAdapter,
         done_cb: typing.Callable,
     ):
-        super().__init__()
-        self.local = local
-        self.node_manager = node_manager
+        super().__init__(local, node_manager, adapter, done_cb)
         self.round_id = 0
-        self.received_delegate_data = dict()
-        self.received_normal_data = dict()
-        self.init_received(self.received_normal_data, normal_only)
-        self.seen = set()
-        self.logger = L.getChild(f'{self.__class__.__name__}-{self.local.id}')
+        self.received_delegate_data = NodeDataMap('received_delegate_data')
+        self.received_normal_data = NodeDataMap('received_normal_data')
+        self.received_normal_data.preload(
+            self.node_manager, normal_only, self.local
+        )
         self.scene_end = False
-        self.done_cb = done_cb
-        self.adapter = adapter
 
     @abstractmethod
     def check_end(self) -> bool:
@@ -84,14 +67,6 @@ class SceneTypeI(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def normal_data(self) -> bytes:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def delegate_data(self) -> bytes:
-        raise NotImplementedError()
-
-    @abstractmethod
     def is_packet_valid(self, pkt: QueuedPacket) -> bool:
         raise NotImplementedError()
 
@@ -100,68 +75,7 @@ class SceneTypeI(ABC):
         raise NotImplementedError()
 
     def scene_complete(self):
-        pass
-
-    def init_received(
-        self,
-        received: typing.Dict[int, typing.Set[QueuedPacket]],
-        expected: typing.Callable[[BaseNode], bool],
-    ):
-        received.clear()
-        for node in self.node_manager.nodes():
-            if expected(node) and node != self.local and not node.is_blacked:
-                received[node.id] = set()
-
-    def drop_evil_nodes(
-        self, received: typing.Dict[int, typing.Set[QueuedPacket]]
-    ):
-        node_recv_num = [
-            (node_id, len({pkt.data for pkt in pkt_set}))
-            for (node_id, pkt_set) in received.items()
-        ]
-        evil_node_ids = filter(lambda x: x[1] != 1, node_recv_num)
-
-        for evil, pkt_num in evil_node_ids:
-            self.logger.warn(f'remote node {evil} send {pkt_num} packets')
-            self.logger.warn(f'all packets from node {evil} are dropped')
-            del received[evil]
-            self.node_manager.block(evil)
-            evil_node = self.node_manager.get_node(evil)
-            if evil_node is not None and isinstance(evil_node, Node):
-                self.adapter.drop_node(evil_node)
-            self.logger.warn(f'node {evil} has been blocked')
-
-    def extract_majority(
-        self, received: typing.Dict[int, typing.Set[QueuedPacket]]
-    ) -> typing.Optional[bytes]:
-        counter: typing.Counter[bytes] = Counter()
-        # count local_delegate_data if local node is also delegate
-        if self.local.is_delegate:
-            counter.update({self.local_delegate_data: 1})
-        counter.update(
-            [
-                list(pkts)[0].data
-                for pkts in received.values()
-                if len(pkts) == 1
-            ]
-        )
-        if not counter:
-            return None
-        top, freq = counter.most_common(1)[0]
-        return top if freq > self.node_manager.delegate_num / 2 else None
-
-    def normal_send(self):
-        data = self.normal_data()
-        self.seen.add((self.local.id, data))
-        self.adapter.broadcast(data, filter_=delegate_only)
-
-    def delegate_send(self):
-        data = self.delegate_data()
-        self.adapter.broadcast(data, filter_=normal_only)
-        # no loopback forwarding so local node will not receive this data from
-        # micronet. remember data for normal phase (if local node is also a
-        # normal node)
-        self.local_delegate_data = data
+        self.logger.info('scene completed.')
 
     def run(self):
         self.round_id = 1
@@ -175,12 +89,8 @@ class SceneTypeI(ABC):
         while not self.scene_end and not local_delegate_ending:
             # step 1
             if self.round_id > 1 and self.local.is_delegate:
-                self.logger.debug(
-                    f'normal data before filtering {self.received_normal_data}'
-                )
-                self.drop_evil_nodes(self.received_normal_data)
-                self.logger.debug(
-                    f'received normal data {self.received_normal_data}'
+                self.received_normal_data.drop_evil_nodes(
+                    self.node_manager, self.adapter
                 )
                 self.delegate_update()
                 # does not set self.scene_end immediately to handle nodes with
@@ -189,7 +99,9 @@ class SceneTypeI(ABC):
                 # decides to exit
                 local_delegate_ending = self.check_end()
                 self.delegate_send()
-                self.init_received(self.received_normal_data, normal_only)
+                self.received_normal_data.preload(
+                    self.node_manager, normal_only, self.local
+                )
 
             # first round doesn't need normal data update
             self.normal_phase_done = self.round_id == 1
@@ -256,7 +168,7 @@ class SceneTypeI(ABC):
             self.logger.debug("data is not in DelegateToNormal type, ignore")
             return
 
-        self.received_delegate_data.setdefault(pkt.origin.id, set()).add(pkt)
+        self.received_delegate_data.add(pkt)
         data = self.extract_majority(self.received_delegate_data)
         if data is not None:
             self.normal_update(data)
@@ -274,21 +186,19 @@ class SceneTypeI(ABC):
                 pkt.origin.id,
             )
             return
-        if pkt.origin.id not in self.received_normal_data:
+        if pkt.origin.id not in self.received_normal_data.all.keys():
             self.logger.warn(
                 'unexpected pkt %r, expecting %s',
                 pkt,
-                tuple(self.received_normal_data.keys()),
+                tuple(self.received_normal_data.all.keys()),
             )
             return
         if self.data_type(pkt) != DataType.NormalToDelegate:
             self.logger.debug("data is not in NormalToDelegate type, ignore")
             return
 
-        self.received_normal_data[pkt.origin.id].add(pkt)
-        if (pkt.origin.id, pkt.data) not in self.seen:
-            self.seen.add((pkt.origin.id, pkt.data))
-            self.adapter.broadcast_forward(pkt, filter_=normal_only)
+        self.received_normal_data.add(pkt)
+        self.delegate_forward(pkt, delegate_only)
 
 
 class SimpleAdd(SceneTypeI):
@@ -354,7 +264,7 @@ class SimpleAdd(SceneTypeI):
 
     def delegate_update(self):
         self.delegate_value = self.normal_value
-        for node_id, pkts in self.received_normal_data.items():
+        for node_id, pkts in self.received_normal_data.all.items():
             # this method is supposed to be called after clearup evil nodes
             pkt = list(pkts)[0]
             self.delegate_value += self._Data.from_bytes(pkt.data).value
@@ -386,7 +296,12 @@ class SimpleAdd(SceneTypeI):
     def is_packet_valid(self, pkt: QueuedPacket) -> bool:
         try:
             data = self._Data.from_bytes(pkt.data)
-            self.logger.debug('got scene data %r', data)
+            self.logger.debug(
+                'got scene data %r by %d via %s',
+                data,
+                pkt.origin.id,
+                pkt.received_from.id if pkt.received_from else 'unknown',
+            )
             return data.round_id == self.round_id
         except:
             self.logger.warn(f'cannot parse {pkt}', exc_info=True)
