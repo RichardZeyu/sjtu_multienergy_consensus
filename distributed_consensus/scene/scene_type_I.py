@@ -1,4 +1,3 @@
-import logging
 import struct
 import typing
 from abc import abstractmethod
@@ -10,12 +9,9 @@ from ..core.node_manager import NodeManager
 from ..sync_adapter import (
     QueuedPacket,
     QueueManagerAdapter,
-    delegate_only,
     normal_only,
 )
 from .scene import AbstractScene, DataType, NodeDataMap
-
-L = logging.getLogger(__name__)
 
 
 class SceneTypeI(AbstractScene):
@@ -66,14 +62,6 @@ class SceneTypeI(AbstractScene):
     def round_timeout(self) -> float:
         raise NotImplementedError()
 
-    @abstractmethod
-    def is_packet_valid(self, pkt: QueuedPacket) -> bool:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def data_type(self, pkt: QueuedPacket) -> DataType:
-        raise NotImplementedError()
-
     def scene_complete(self):
         self.logger.info('scene completed.')
 
@@ -82,9 +70,10 @@ class SceneTypeI(AbstractScene):
         local_delegate_ending: bool = False
         self.seen.clear()
 
-        # round 1 starts from step 3
-        self.normal_initiate()
-        self.normal_send()
+        if self.local.is_normal:
+            # round 1 starts from step 3
+            self.normal_initiate()
+            self.normal_send()
 
         while not self.scene_end and not local_delegate_ending:
             # step 1
@@ -149,23 +138,10 @@ class SceneTypeI(AbstractScene):
         if not self.local.is_normal:
             self.logger.debug("local is not normal node, abort",)
             return
-        if pkt.received_from is None:
-            self.logger.debug("remote is None, normal node won't handle it",)
-            return
-        if not pkt.received_from.is_delegate:
+        if not self.is_delegate_packet(pkt, DataType.DelegateToNormal):
             self.logger.debug(
-                "remote %s is not delegate, normal node won't handle it",
-                pkt.received_from.id,
+                f"{pkt} not from delegate, normal node won't handle it",
             )
-            return
-        if not pkt.origin.is_delegate:
-            self.logger.debug(
-                "origin %s is not delegate, normal node won't handle it",
-                pkt.origin.id,
-            )
-            return
-        if self.data_type(pkt) != DataType.DelegateToNormal:
-            self.logger.debug("data is not in DelegateToNormal type, ignore")
             return
 
         self.received_delegate_data.add(pkt)
@@ -177,28 +153,17 @@ class SceneTypeI(AbstractScene):
             self.scene_end = self.check_end_in_data(data)
 
     def delegate_node_action(self, pkt: QueuedPacket):
-        if not self.local.is_delegate:
-            self.logger.debug("local is not delegate node, abort",)
-            return
-        if not pkt.origin.is_normal:
-            self.logger.warning(
-                "origin %s is not normal, delegate node won't forward it",
-                pkt.origin.id,
-            )
+        if not self.broadcast_for_consensus(pkt):
+            # implying pkt is a normal packet
             return
         if pkt.origin.id not in self.received_normal_data.all.keys():
             self.logger.warn(
-                'unexpected pkt %r, expecting %s',
+                'pkt %r from unexpected normal node, expecting %s',
                 pkt,
                 tuple(self.received_normal_data.all.keys()),
             )
             return
-        if self.data_type(pkt) != DataType.NormalToDelegate:
-            self.logger.debug("data is not in NormalToDelegate type, ignore")
-            return
-
         self.received_normal_data.add(pkt)
-        self.delegate_forward(pkt, delegate_only)
 
 
 class SimpleAdd(SceneTypeI):
@@ -263,7 +228,12 @@ class SimpleAdd(SceneTypeI):
             return False
 
     def delegate_update(self):
-        self.delegate_value = self.normal_value
+        if self.local.is_normal:
+            # also take my own value into consideration since node won't
+            # receive its own packet from micronet
+            self.delegate_value = self.normal_value
+        else:
+            self.delegate_value = 0
         for node_id, pkts in self.received_normal_data.all.items():
             # this method is supposed to be called after clearup evil nodes
             pkt = list(pkts)[0]
