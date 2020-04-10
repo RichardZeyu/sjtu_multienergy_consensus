@@ -189,8 +189,9 @@ class TCPConnectionHandler:
         def retrieve_exception_cb(task: asyncio.Task):
             """ retrieve potential result/exception from orphan tasks """
             try:
+                result = task.result()
                 self.logger.debug(
-                    f'orphan task {task!r} done with {task.result()}'
+                    f'orphan task {task!r} done with {result}'
                 )
             except:
                 self.logger.debug(

@@ -25,6 +25,10 @@ class BaseNode:
     def pure_delegate(self) -> bool:
         return self.is_delegate and not self.is_normal
 
+    @property
+    def dual_role(self) -> bool:
+        return self.is_delegate and self.is_normal
+
 
 if TYPE_CHECKING:
     WeakNodeSet = WeakSet[BaseNode]
