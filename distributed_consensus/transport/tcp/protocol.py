@@ -199,5 +199,5 @@ class TCPProtocolV1:
         self.logger = L.getChild('TCPProtocolV1').getChild(
             f'{self.local.id}<-{self.remote.id}'
         )
-        self.logger.info('handshake done, connection established')
+        self.logger.info('handshake done')
         return node

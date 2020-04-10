@@ -84,8 +84,10 @@ class TCPConnectionHandler:
         elif remote.is_blacked:
             self.logger.warn(f'remote {remote.id} is blocked, disconnect')
             ok = False
-        elif not self.local_node.is_delegate and remote.is_normal:
-            self.logger.warn(f'remote {remote.id} is normal node, drop')
+        elif self.local_node.pure_normal and remote.pure_normal:
+            self.logger.warn(
+                f'both local and {remote.id} are pure normal node, disconnect'
+            )
             ok = False
         return ok
 
@@ -174,11 +176,14 @@ class TCPConnectionHandler:
         protocol: TCPProtocolV1,
     ):
         def out_task():
-            return asyncio.create_task(egress.get())
+            return asyncio.create_task(
+                egress.get(), name=f'send-{protocol.remote.id}'
+            )
 
         def in_task():
             return asyncio.create_task(
-                reader.readexactly(protocol.num_to_read())
+                reader.readexactly(protocol.num_to_read()),
+                name=f'recv-{protocol.remote.id}',
             )
 
         def retrieve_exception_cb(task: asyncio.Task):
@@ -296,7 +301,7 @@ class TCPConnectionHandler:
         micronet_ok = asyncio.Event()
         self.nodes_incoming = asyncio.Semaphore(0)
 
-        over_local: bool = False
+        should_connect: bool = False
 
         await self.listen_from()
 
@@ -309,10 +314,14 @@ class TCPConnectionHandler:
         for node in sorted(all_nodes):
             if node is self.local_node:
                 self.logger.debug(f'node {node.id} is local, continue')
-                over_local = True
-            elif not self.local_node.is_delegate and node.is_normal:
-                self.logger.debug(f'node {node.id} is normal node, ignore')
-            elif over_local:
+                # meet local node in sorted node list, should connect to
+                # following nodes
+                should_connect = True
+            elif self.local_node.pure_normal and node.pure_normal:
+                self.logger.debug(
+                    f'both local and {node.id} are pure normal node, continue'
+                )
+            elif should_connect:
                 self.logger.debug(f'connect to node {node.id}')
                 self.connect_in_background(node)
                 self.pending_nodes.add(node)

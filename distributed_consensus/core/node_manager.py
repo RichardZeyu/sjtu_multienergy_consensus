@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Optional, Any, Set
+from typing import TYPE_CHECKING, Any, Optional, Set
 from weakref import WeakSet, WeakValueDictionary
 
 
@@ -16,6 +16,14 @@ class BaseNode:
         self.is_delegate = is_delegate
         self.is_normal = is_normal
         self.is_blacked = is_blacked
+
+    @property
+    def pure_normal(self) -> bool:
+        return self.is_normal and not self.is_delegate
+
+    @property
+    def pure_delegate(self) -> bool:
+        return self.is_delegate and not self.is_normal
 
 
 if TYPE_CHECKING:
