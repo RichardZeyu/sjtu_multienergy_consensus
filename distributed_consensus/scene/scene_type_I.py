@@ -6,11 +6,7 @@ from time import sleep
 
 from ..core.node import Node
 from ..core.node_manager import NodeManager
-from ..sync_adapter import (
-    QueuedPacket,
-    QueueManagerAdapter,
-    normal_only,
-)
+from ..sync_adapter import QueuedPacket, QueueManagerAdapter, normal_only
 from .scene import AbstractScene, DataType, NodeDataMap
 
 
@@ -234,7 +230,7 @@ class SimpleAdd(SceneTypeI):
             self.delegate_value = self.normal_value
         else:
             self.delegate_value = 0
-        for node_id, pkts in self.received_normal_data.all.items():
+        for _, pkts in self.received_normal_data.all.items():
             # this method is supposed to be called after clearup evil nodes
             pkt = list(pkts)[0]
             self.delegate_value += self._Data.from_bytes(pkt.data).value

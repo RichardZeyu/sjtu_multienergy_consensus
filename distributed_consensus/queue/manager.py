@@ -2,6 +2,7 @@ import asyncio
 import logging
 import typing
 from collections import deque
+from typing import Set, Callable
 
 from ..core.node import Node
 from ..core.node_manager import BaseNode, NodeManager
@@ -12,7 +13,7 @@ L = logging.getLogger(__name__)
 EOC = None
 
 
-NodeFilter = typing.Callable[[BaseNode], bool]
+NodeFilter = Callable[[BaseNode], bool]
 
 
 def all_node(n: BaseNode) -> bool:
@@ -25,6 +26,15 @@ def delegate_only(n: BaseNode) -> bool:
 
 def normal_only(n: BaseNode) -> bool:
     return n.is_normal
+
+
+def some_ids(ids: Set[int]) -> NodeFilter:
+    ids = set(ids)
+
+    def _filter_by_id(n: BaseNode) -> bool:
+        return n.id in ids
+
+    return _filter_by_id
 
 
 def clean_queue(queue: asyncio.Queue):

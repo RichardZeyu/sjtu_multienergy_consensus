@@ -4,6 +4,7 @@ import typing
 from datetime import datetime, timedelta
 from time import sleep
 
+from ..core.node import Node
 from ..queue.manager import NodeFilter, QueueManager, all_node
 from ..queue.packet import QueuedPacket
 
@@ -64,4 +65,9 @@ class QueueManagerAdapter:
     ):
         asyncio.run_coroutine_threadsafe(
             self.manager.broadcast_forward(to_forward, filter_), self.loop
+        ).result()
+
+    def send_to(self, remote: Node, data: bytes):
+        asyncio.run_coroutine_threadsafe(
+            self.manager.send_to(remote, data), self.loop
         ).result()

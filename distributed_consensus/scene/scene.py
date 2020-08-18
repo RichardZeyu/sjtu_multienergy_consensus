@@ -125,7 +125,6 @@ class AbstractScene(ABC):
     done_cb: typing.Callable
     seen: typing.Set[typing.Tuple[int, bytes]]
     local_delegate_data: typing.Optional[bytes]
-    local_normal_data: typing.Optional[bytes]
     logger: logging.Logger
 
     def __init__(
@@ -145,7 +144,6 @@ class AbstractScene(ABC):
 
     def normal_send(self):
         data = self.normal_data()
-        self.local_normal_data = data
         self.adapter.broadcast(data, filter_=delegate_only)
 
     def delegate_send(self):
