@@ -18,6 +18,7 @@ click = "*"
 pyopenssl = "*"
 coloredlogs = "*"
 colorama = "*"
+pyyaml = "*"
 
 [requires]
 python_version = "3.8"

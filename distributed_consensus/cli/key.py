@@ -1,7 +1,6 @@
 import click
 
 from OpenSSL.crypto import TYPE_DSA, TYPE_RSA
-
 from ..crypto.keygen import generate_key
 from .root import root
 
