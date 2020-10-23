@@ -41,7 +41,7 @@ class QueueManagerAdapter:
             try:
                 pkt = recv.result()
                 if pkt is not None:
-                    return pkt
+                    return pkt  
             except asyncio.TimeoutError:
                 break
             now = datetime.utcnow()
@@ -53,9 +53,11 @@ class QueueManagerAdapter:
         return None
 
     def drop_node(self, node):
+        #call_soon_threadsafe 调度来自不同OS线程的回调函数
         self.loop.call_soon_threadsafe(self.manager.close, node)
-
+    
     def broadcast(self, data: bytes, filter_: NodeFilter = all_node):
+        #run_coroutine_threadsafe 从不同的OS线程调度一个协程对象 manager.broadcast是个协程，含有async
         asyncio.run_coroutine_threadsafe(
             self.manager.broadcast(data, filter_), self.loop
         ).result()

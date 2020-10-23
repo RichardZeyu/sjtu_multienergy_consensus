@@ -1,6 +1,6 @@
 [[source]]
 name = "pypi"
-url = "https://pypi.org/simple"
+url = "https://mirrors.aliyun.com/pypi/simple"
 verify_ssl = true
 
 [dev-packages]
@@ -19,6 +19,8 @@ pyopenssl = "*"
 coloredlogs = "*"
 colorama = "*"
 pyyaml = "*"
+pandas = "*"
+scipy = "*"
 
 [requires]
 python_version = "3.8"

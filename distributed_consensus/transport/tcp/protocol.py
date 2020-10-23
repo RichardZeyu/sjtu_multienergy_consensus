@@ -12,7 +12,7 @@ from ...queue.packet import QueuedPacket
 
 L = getLogger(__name__)
 
-
+# 该类主要用来解析消息
 class TCPProtocolV1:
     version: int = 1
 
@@ -157,7 +157,7 @@ class TCPProtocolV1:
             self.version,
             timestamp,
             self.local.id,
-            b'',  # occupier for signature
+            b'',  # occupier for signature 占位
         )[: -self.signature_len]
         bs = bs + sign(self.local.private_key, bs, self.digest)
         self.logger.debug('handshake to send: %s', b2a_hex(bs))
@@ -169,6 +169,7 @@ class TCPProtocolV1:
 
         local_timestamp = datetime.utcnow().timestamp()
         self.logger.debug('handshake received: %s', b2a_hex(bs))
+        # fmt 大端模式，byte转换
         version, timestamp, node_id, signature = struct.unpack(
             self.handshake_struct, bs
         )
@@ -191,6 +192,7 @@ class TCPProtocolV1:
             return None
 
         assert isinstance(node, Node)
+        # 数组操作 从开头到倒数第self.signature_len个。倒数第self.signature_len个到最后
         data, signature = bs[: -self.signature_len], bs[-self.signature_len :]
         if not verify(node.public_key, signature, data, self.digest):
             self.logger.warn('corrupted handshake packet')

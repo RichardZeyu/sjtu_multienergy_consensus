@@ -60,7 +60,7 @@ else:
 
 class QueueManager:
     local: Node
-    _by_node: QueueDictionary
+    _by_node: QueueDictionary # 字典 nodeid->(ingress,egress)
     _buffered: typing.Deque[QueuedPacket]
     logger: logging.Logger
     node_manager: NodeManager
@@ -91,7 +91,9 @@ class QueueManager:
             full_packet=None,
         )
         await egress.put(to_queue)
-
+    # 广播 数据
+    # pkt 数据，filter_过滤器，用来过滤发送的节点
+    # 添加到egress 队列，data_loop会把数据发送到节点
     async def broadcast(self, pkt: bytes, filter_: NodeFilter = all_node):
         for node_id, (_, egress) in self._by_node.items():
             remote = self.node_manager.get_node(node_id)
@@ -109,7 +111,7 @@ class QueueManager:
                 full_packet=None,
             )
             await egress.put(to_queue)
-
+    # 广播转发
     async def broadcast_forward(
         self,
         to_forward: QueuedPacket,
@@ -152,7 +154,8 @@ class QueueManager:
             # in case the connection has been closed
             return EOC
         return pkt
-
+    # receive_one_no_wait 会从_buffered中获取
+    # 如果receive_one_no_wait获取不到，则从_by_node中循环获取，并把所有获取到的数据存储到_buffered中
     async def receive_one(
         self, timeout: typing.Optional[float] = None
     ) -> typing.Optional[QueuedPacket]:
@@ -204,7 +207,7 @@ class QueueManager:
         ingress: asyncio.Queue = asyncio.Queue()
         egress: asyncio.Queue = asyncio.Queue()
         pair = (ingress, egress)
-        self._by_node[remote.id] = pair
+        self._by_node[remote.id] = pair # 这里存储所有的连接的队列，广播是通过这里进行的，处理数据也是从这里读取的
         return pair
 
     def close(self, remote: Node):

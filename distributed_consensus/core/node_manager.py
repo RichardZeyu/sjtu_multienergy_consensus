@@ -16,11 +16,11 @@ class BaseNode:
         self.is_delegate = is_delegate
         self.is_normal = is_normal
         self.is_blacked = is_blacked
-
+    # 只是普通节点
     @property
     def pure_normal(self) -> bool:
         return self.is_normal and not self.is_delegate
-
+    # 只是代表节点
     @property
     def pure_delegate(self) -> bool:
         return self.is_delegate and not self.is_normal
@@ -99,6 +99,8 @@ def replace_default_manager(manager: NodeManager):
 
 
 def default_manager() -> NodeManager:
+    # 若想在函数内部对函数外的变量进行操作，就需要在函数内部声明其为global
+    # 这里的方法是在模块内，不是在类内部，调用外部变量时需要使用global来标志变量
     global __node_manager_singleton
     return __node_manager_singleton
 

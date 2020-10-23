@@ -78,13 +78,15 @@ class NodeDataMap:
             return None
         top, freq = counter.most_common(1)[0]
         return top if freq > threshold else None
-
+    
+    # 移除作恶节点
     def drop_evil_nodes(
         self,
         node_manager: typing.Optional[NodeManager],
         adapter: typing.Optional[QueueManagerAdapter],
     ):
         self.logger.debug(f'normal data before filtering {self.table}')
+        # 统计data,如果没有发送数据，那么节点是作恶节点
         node_recv_num = [
             (node_id, len({pkt.data for pkt in pkt_set}))
             for (node_id, pkt_set) in self.table.items()
@@ -144,6 +146,7 @@ class AbstractScene(ABC):
 
     def normal_send(self):
         data = self.normal_data()
+        # 广播消息 filter_相当于一个代理方法(表达式、回调)
         self.adapter.broadcast(data, filter_=delegate_only)
 
     def delegate_send(self):
@@ -161,7 +164,7 @@ class AbstractScene(ABC):
         # micronet. remember data for normal phase (if local node is also a
         # normal node)
         self.local_delegate_data = data
-
+    # 代表转发
     def delegate_forward(self, pkt: QueuedPacket, filter_: NodeFilter) -> bool:
         if (pkt.origin.id, pkt.data) not in self.seen:
             self.seen.add((pkt.origin.id, pkt.data))

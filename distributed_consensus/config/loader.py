@@ -134,11 +134,13 @@ class Config:
             yaml_file = open(yaml_file, 'rb')
 
         obj = yaml.safe_load(yaml_file)
-
+        # classmethod标志的方法不需要实例化就能够调用，但是必须要cls作为第一个参数
+        # 在这里通过cls实例化对象
         ins = cls(Path(yaml_file.name).parent)
         for node_id, node in obj.get('nodes', {}).items():
+            # create_node 会创建Node，Node对象的父类构造函数会把Node添加到NodeManager
             ins.create_node(node_id, is_local=local_node_id == node_id, **node)
-
+        # 可以直接通过NodeManager获取到Node对象
         if ins.node_manager.get_node(local_node_id) is None:
             L.fatal(f'local node {local_node_id} not defined in nodes section')
             raise RuntimeError(

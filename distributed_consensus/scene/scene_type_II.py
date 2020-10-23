@@ -196,8 +196,8 @@ class SimpleSum(SceneTypeII):
         self,
         step_timeout_sec: float,
         normal_phase_timeout_sec: float,
-        *args,
-        **kwargs,
+        *args,# 任意多个无名参数，类型为tuple
+        **kwargs, # 关键字参数，为dict
     ):
         super().__init__(*args, **kwargs)
         self.delegates = sorted(self.node_manager.get_delegates())

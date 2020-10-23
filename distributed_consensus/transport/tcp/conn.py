@@ -19,6 +19,7 @@ class TCPConnectionHandler:
     protocol_class: typing.Type[TCPProtocolV1]
     pending_nodes: typing.Set[Node]
     pending_connectors: typing.Set[asyncio.Task]
+    # 信号量标志
     nodes_incoming: asyncio.Semaphore
     server: typing.Optional[asyncio.AbstractServer]
 
@@ -44,7 +45,9 @@ class TCPConnectionHandler:
     async def send_handshake(
         self, writer: asyncio.StreamWriter, protocol: TCPProtocolV1,
     ):
+        #回复握手
         writer.write(protocol.generate_handshake())
+        # writer.drain就是等待sock把缓冲区的数据发送出去
         try:
             await asyncio.wait_for(writer.drain(), protocol.handshake_timeout)
         except asyncio.TimeoutError:
@@ -90,7 +93,8 @@ class TCPConnectionHandler:
             )
             ok = False
         return ok
-
+    # client和server都是从该方法来处理socket数据的接收和发送
+    # client会传输remote参数进来
     async def add_connection(
         self,
         reader: asyncio.StreamReader,
@@ -113,12 +117,15 @@ class TCPConnectionHandler:
             remote.id if remote is not None else 'unknown',
             writer.get_extra_info('peername'),
         )
+        # add_connection 作为server回调的时候，remote是None的
+        # 当在其他地方调用的时候，会传递remote过来，这时应该不是None的
         if remote is None:
             remote = await self.wait_handshake(reader, protocol)
             ok = self.is_remote_valid(remote)
         else:
+            # assert 用于判断一个表达式，在表达式条件为 false 的时候触发异常。
             assert self.is_remote_valid(remote)  # should be a bug
-            ok = await self.send_handshake(writer, protocol)
+            ok = await self.send_handshake(writer, protocol) # 发送
         if not ok:
             self.logger.warn('handshake failed or invalid remote, drop')
             writer.close()
@@ -126,7 +133,10 @@ class TCPConnectionHandler:
         else:
             assert remote is not None
             if remote in self.pending_nodes:
+                # pending_nodes存储的是未连接（等待）状态的节点
+                # 当节点连接进来时，进行移除操作
                 self.pending_nodes.remove(remote)
+                # 释放信号量
                 self.nodes_incoming.release()
             asyncio.create_task(
                 self.dispatch(remote, reader, writer, protocol)
@@ -141,6 +151,9 @@ class TCPConnectionHandler:
     ):
         ingress, egress = self.queue_manager.create_queue(remote)
         try:
+            # 使用data_loop来读写socket
+            # ingress 和egress都是来自QueueManager，在这个类对象里面缓存处理数据，需要发送的数据也是丢进egress中，然后在data_loop中获取发送。
+            # data_loop里只是进行数据的收、发工作
             await self.data_loop(ingress, egress, reader, writer, protocol)
         except asyncio.CancelledError:
             self.logger.info(
@@ -284,6 +297,8 @@ class TCPConnectionHandler:
 
     async def listen_from(self, node: Node = None) -> asyncio.AbstractServer:
         node = self.local_node if node is None else node
+        # add_connection为回调 start_server和其他语言的模式有点区别，并不会同一个连接多次触发回调。
+        # add_connection回调只在连接的时候触发，后续读取和写入操作使用reader和writer来进行。
         server = await asyncio.start_server(
             self.add_connection, node.ip, node.port
         )
@@ -292,7 +307,11 @@ class TCPConnectionHandler:
 
     async def wait_micronet_up(self, event: asyncio.Event):
         while True:
+            # 等待信号量
             await self.nodes_incoming.acquire()
+            # 当数组为空时，数组/set 值被隐式地赋为False
+            # not self.pending_nodes为true表示数组为空
+            # 也就是所有的节点都连接进来时，释放信号
             if not self.pending_nodes:
                 event.set()
                 break
@@ -301,9 +320,11 @@ class TCPConnectionHandler:
     async def setup_micronet(self) -> asyncio.Event:
         micronet_ok = asyncio.Event()
         self.nodes_incoming = asyncio.Semaphore(0)
-
+        """if self.local_node.pure_normal():
+            return micronet_ok
+        """
         should_connect: bool = False
-
+        # 开启服务
         await self.listen_from()
 
         all_nodes = [
@@ -311,7 +332,7 @@ class TCPConnectionHandler:
             for node in self.node_manager.nodes()
             if isinstance(node, Node)
         ]
-
+        # 连接其他代表
         for node in sorted(all_nodes):
             if node is self.local_node:
                 self.logger.debug(f'node {node.id} is local, continue')
@@ -329,14 +350,16 @@ class TCPConnectionHandler:
             else:
                 self.logger.debug(f'expect node {node.id} to connect')
                 self.pending_nodes.add(node)
-
+        # wait_micronet_up(micronet_ok)等待微网启动并释放信号
         asyncio.create_task(self.wait_micronet_up(micronet_ok))
 
         return micronet_ok
 
     async def setup_and_wait_micronet(self, timeout: float) -> bool:
+        # 启动微网
         event = await self.setup_micronet()
         try:
+            # event.wait() 等待信号
             return await asyncio.wait_for(event.wait(), timeout=timeout)
         except asyncio.TimeoutError:
             self.logger.error('setup micronet timeout')
