@@ -180,7 +180,7 @@ class MultiEnergyPark(SceneTypeIII):
     final_round: int
     round_timeout_sec: float
 
-    normal_value: typing.List[int]
+    normal_value: typing.List[float]
     delegate_value: int
     
     node_update: NodeUpdate
@@ -191,18 +191,18 @@ class MultiEnergyPark(SceneTypeIII):
     # hub: str
     class _Data:
         data_type: DataType
-        round_id: typing.List[int]
-        value: int
+        round_id: int
+        value: typing.List[float]
         is_end: bool
         
         # packet: data type 1B, round ID 4B, value 4B, end flag 1B
-        pkt_fmt: str = '>BLLLLB'
+        pkt_fmt: str = '>BLdddB'
 
         __slots__ = ['data_type', 'round_id', 'value', 'is_end']
 
 
         def __init__(
-            self, data_type: DataType, round_id: int , value: typing.List[int], is_end: bool
+            self, data_type: DataType, round_id: int , value: typing.List[float], is_end: bool
         ):
             self.data_type = data_type
             self.round_id = round_id
@@ -218,7 +218,7 @@ class MultiEnergyPark(SceneTypeIII):
             values = struct.unpack(cls.pkt_fmt, bs)
             type_ = values[0]
             round_id = values[1]
-            value = value[2:5]
+            value = values[2:5]
             is_end = values[5]
             return cls(DataType(type_), round_id, value, is_end > 0)
 
@@ -227,15 +227,15 @@ class MultiEnergyPark(SceneTypeIII):
                 self.pkt_fmt,
                 self.data_type.value,
                 self.round_id,
-                self.value,
+                *self.value,
                 1 if self.is_end else 0,
             )
     def __init__(self, final_round, round_timeout_sec,first_demand,demand,price_ge,hub, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.final_round = final_round
         self.round_timeout_sec = round_timeout_sec
-        self.demand_value(first_demand)
-        self.node_update = NodeUpdate(demand,price_ge,hub)
+        self.normal_value = self.demand_value(first_demand)
+        self.node_update = NodeUpdate(demand,price_ge,hub,self.local)
         # self.demand = demand
         # self.price_ge = price_ge
         # self.hub = hub
@@ -275,6 +275,7 @@ class MultiEnergyPark(SceneTypeIII):
         return self._Data(
             DataType.NormalToDelegate, self.round_id, self.normal_value, False
         ).pack()
+        # real = self._Data.from_bytes(data)
 
     def delegate_data(self) -> bytes:
         return self._Data(
