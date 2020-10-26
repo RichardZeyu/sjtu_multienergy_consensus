@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import typing
 
+from ...core.node import Node
+
 class NodeUpdate:
     gasdemand: object
     elecdemand_raw: object
@@ -13,8 +15,11 @@ class NodeUpdate:
     branch: object
     NodeInOut: object
     renewerable_energy_raw: object
-    def __init__(self,demand: str,price_ge: str, hub: str):
+
+    local: Node
+    def __init__(self,demand: str,price_ge: str, hub: str,local: Node):
         super().__init__()
+        self.local = local
         gasdemand_raw = pd.read_excel(demand, 'GasDemand')
         elecdemand_raw = pd.read_excel(demand, 'ElecDemand')
         heatdemand_raw = pd.read_excel(demand, 'HeatDemand')
@@ -37,10 +42,10 @@ class NodeUpdate:
     def normal_node_update(self,gp,ep,hp):
         #时段12负荷（目前仿真只做时段12，其他时段原理相同）
         ##特别说明：第一个参数0表示微网1，微网2,3...依次类推##
-        gasdemand =  self.gasdemand_raw.loc[0, 'T12']
-        elecdemand = self.elecdemand_raw.loc[0, 'T12']
-        heatdemand = self.heatdemand_raw.loc[0, 'T12']
-        cooldemand = self.cooldemand_raw.loc[0, 'T12']
+        gasdemand =  self.gasdemand_raw.loc[self.local.id-1, 'T12']
+        elecdemand = self.elecdemand_raw.loc[self.local.id-1, 'T12']
+        heatdemand = self.heatdemand_raw.loc[self.local.id-1, 'T12']
+        cooldemand = self.cooldemand_raw.loc[self.local.id-1, 'T12']
         #电厂成本
         plant_node = node.loc[node['节点类型'] == 14]['节点序号'].values[0]
         plant_b = node.loc[plant_node - 1, 'b']
@@ -167,11 +172,11 @@ class NodeUpdate:
         # print('迭代终止原因：', res.message)
 
     def delegate_update(self,gd,ed,hd, gp,ep,hp, round_id):
-        gasdemand = self.gasdemand_raw.loc[12, 'T12']
-        elecdemand = self.elecdemand_raw.loc[12, 'T12']
+        gasdemand = self.gasdemand_raw.loc[12, 'T12'] # sum
+        elecdemand = self.elecdemand_raw.loc[12, 'T12'] # sum
 
-        GasPrice = self.price_raw.loc[11, 'gas']
-        ElecPrice = self.price_raw.loc[11, 'elec']
+        GasPrice = self.price_raw.loc[11, 'gas'] # 时段12(下标为11)的数据
+        ElecPrice = self.price_raw.loc[11, 'elec'] # 时段12(下标为11)的数据
         CH = [206.1, 206.1, 206.1]
         Qmax = [100, 0, 160]
         #判断当前迭代价格与外部源价格比对
