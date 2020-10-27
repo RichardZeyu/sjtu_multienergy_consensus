@@ -77,11 +77,14 @@ class SceneTypeIII(AbstractScene):
             # round 1 starts from step 3
             # self.normal_initiate()
             # 不用初始化数据，__init__方法里有初始化
+            # 初始需求量发送
             self.normal_send()
         # delegate 代表
         while not self.scene_end and not local_delegate_ending:
             # step 1
             if self.round_id > 1 and self.local.is_delegate:
+                # 第二步是代表共识，排除作恶节点
+                # 更新数据并发回给普通节点
                 self.received_normal_data.drop_evil_nodes(
                     self.node_manager, self.adapter
                 )
@@ -97,6 +100,9 @@ class SceneTypeIII(AbstractScene):
                 )
 
             # first round doesn't need normal data update
+
+            # 第一轮
+
             self.normal_phase_done = self.round_id == 1
             self.received_delegate_data.clear()
             now = datetime.utcnow()
@@ -106,6 +112,12 @@ class SceneTypeIII(AbstractScene):
             )
 
             # step 2 ~ 5, wrapped by receiving loop
+
+            # 获取数据
+
+            # 第一步是代表接收转发 （直到超时跳出循环）
+            # 第二步继续就是第三步，普通节点接收到代表的数据，更新再次发送
+
             self.round(round_end)
 
             # add a gap for possible timing error. otherwise quick nodes
@@ -124,12 +136,14 @@ class SceneTypeIII(AbstractScene):
         while not self.scene_end:
             pkt = self.adapter.wait_next_pkt(run_till=round_end)
             if pkt is None:
+                # 超时结束
                 self.logger.info(
                     f'receive timeout, round {self.round_id} over'
                 )
                 break
             # 解压数据并且判断是否是当前一轮的数据
             if not self.is_packet_valid(pkt):
+                # 如果不是当前一轮数据，或者数据不能unpack，弃包 继续循环
                 self.logger.warn(f'drop invalid packet {pkt}')
                 continue
             # step 2 & 3
@@ -163,10 +177,12 @@ class SceneTypeIII(AbstractScene):
             self.scene_end = self.check_end_in_data(data)
     # 代表节点处理，把来自普通节点的数据进行处理
     def delegate_node_action(self, pkt: QueuedPacket):
-        # 共识
+        # 广播 如果该节点已经进来过了，直接退出（无论是从代表转发或者是微网发送过来），来自代表节点也直接退出
+        # 转发完成，把数据添加到received_normal_data中
         if not self.broadcast_for_consensus(pkt):
             # implying pkt is a normal packet
             return
+        # 程序初始化时已经初始化received_normal_data了，所有普通节点的id都在里面了。
         if pkt.origin.id not in self.received_normal_data.all.keys():
             self.logger.warn(
                 'pkt %r from unexpected normal node, expecting %s',
@@ -174,6 +190,7 @@ class SceneTypeIII(AbstractScene):
                 tuple(self.received_normal_data.all.keys()),
             )
             return
+        # 数据添加到缓存map中
         self.received_normal_data.add(pkt)
     
 class MultiEnergyPark(SceneTypeIII):
@@ -230,24 +247,27 @@ class MultiEnergyPark(SceneTypeIII):
                 *self.value,
                 1 if self.is_end else 0,
             )
-    def __init__(self, final_round, round_timeout_sec,first_demand,demand,price_ge,hub, *args, **kwargs):
+    def __init__(self, final_round, round_timeout_sec,first_demand,demand,price_ge, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.final_round = final_round
         self.round_timeout_sec = round_timeout_sec
         self.normal_value = self.demand_value(first_demand)
-        self.node_update = NodeUpdate(demand,price_ge,hub,self.local)
+        self.node_update = NodeUpdate(demand,price_ge,self.local)
         # self.demand = demand
         # self.price_ge = price_ge
         # self.hub = hub
+    
+    # 这个可能需要改为nodeUpdate的checkend
     def check_end(self) -> bool:
         return self.round_id >= self.final_round
 
+    # 这个不需要改
     def check_end_in_data(self, data: bytes) -> bool:
         try:
             return self._Data.from_bytes(data).is_end
         except:
             return False
-
+    # 这个需要更改为nodeUpdate中的delegate_update
     def delegate_update(self):
         if self.local.is_normal:
             # also take my own value into consideration since node won't
@@ -264,6 +284,8 @@ class MultiEnergyPark(SceneTypeIII):
     def normal_initiate(self):
         self.normal_value = self.demand_value(self.first_demand)
 
+    # 普通节点更新数据
+    # 需要使用nodeUpdate来进行update
     def normal_update(self, data: bytes):
         self.normal_value = self._Data.from_bytes(data).value + 1
         self.logger.info(f'update normal value to {self.normal_value}')
@@ -284,7 +306,8 @@ class MultiEnergyPark(SceneTypeIII):
             self.delegate_value,
             self.check_end(),
         ).pack()
-
+    
+    # 判断数据是否能unpack，并且判断是否是当前一轮数据
     def is_packet_valid(self, pkt: QueuedPacket) -> bool:
         try:
             data = self._Data.from_bytes(pkt.data)

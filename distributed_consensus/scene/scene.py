@@ -164,7 +164,8 @@ class AbstractScene(ABC):
         # micronet. remember data for normal phase (if local node is also a
         # normal node)
         self.local_delegate_data = data
-    # 代表转发
+    # 代表转发 
+    # seen 存储已经转发过的node，如果没有转发，则转发出去。（以此来避免数据在各个代表中循环转发）
     def delegate_forward(self, pkt: QueuedPacket, filter_: NodeFilter) -> bool:
         if (pkt.origin.id, pkt.data) not in self.seen:
             self.seen.add((pkt.origin.id, pkt.data))
