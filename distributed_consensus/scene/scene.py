@@ -6,6 +6,7 @@ from enum import Enum
 
 from ..core.node import Node
 from ..core.node_manager import BaseNode, NodeManager
+from ..queue.manager import DataGetter
 from ..sync_adapter import (
     QueuedPacket,
     QueueManagerAdapter,
@@ -156,6 +157,8 @@ class AbstractScene(ABC):
         # micronet. remember data for normal phase (if local node is also a
         # normal node)
         self.local_delegate_data = data
+    def delegate_send_adapt(self,getter: DataGetter):
+        self.adapter.broadcast_adapt(getter, filter_=normal_only)
 
     def leader_send(self):
         data = self.leader_data()
