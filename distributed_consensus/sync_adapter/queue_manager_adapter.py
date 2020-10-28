@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from time import sleep
 
 from ..core.node import Node
-from ..queue.manager import NodeFilter, QueueManager, all_node
+from ..queue.manager import NodeFilter,DataGetter, QueueManager, all_node
 from ..queue.packet import QueuedPacket
 
 L = logging.getLogger(__name__)
@@ -61,7 +61,10 @@ class QueueManagerAdapter:
         asyncio.run_coroutine_threadsafe(
             self.manager.broadcast(data, filter_), self.loop
         ).result()
-
+    def broadcast_adapt(self, getter: DataGetter, filter_: NodeFilter = all_node):
+        asyncio.run_coroutine_threadsafe(
+            self.manager.broadcast_adapt(getter, filter_), self.loop
+        ).result()
     def broadcast_forward(
         self, to_forward: QueuedPacket, filter_: NodeFilter = all_node
     ):
