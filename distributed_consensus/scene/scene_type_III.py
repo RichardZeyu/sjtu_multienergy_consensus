@@ -52,7 +52,9 @@ class SceneTypeIII(AbstractScene):
     @abstractmethod
     def delegate_update(self):
         raise NotImplementedError()
-
+    @abstractmethod
+    def delegate_getter(self, int)-> float:
+        raise NotImplementedError()
     @abstractmethod
     def normal_initiate(self):
         raise NotImplementedError()
@@ -75,7 +77,7 @@ class SceneTypeIII(AbstractScene):
 
         if self.local.is_normal:
             # round 1 starts from step 3
-            # self.normal_initiate()
+            self.normal_initiate()
             # 不用初始化数据，__init__方法里有初始化
             # 初始需求量发送
             self.normal_send()
@@ -94,7 +96,8 @@ class SceneTypeIII(AbstractScene):
                 # receiving phase still need to run after local delegate
                 # decides to exit
                 local_delegate_ending = self.check_end()
-                self.delegate_send()
+                # self.delegate_send()
+                self.delegate_send_adapt(self.delegate_getter)
                 self.received_normal_data.preload(
                     self.node_manager, normal_only, self.local
                 )
@@ -198,8 +201,10 @@ class MultiEnergyPark(SceneTypeIII):
     round_timeout_sec: float
 
     normal_value: typing.List[float]
-    delegate_value: int
+    delegate_value: () # 本轮的价格
+    pre_delegate_value: () # 上一轮的价格
     
+
     node_update: NodeUpdate
     # excel文档路径
     # first_demand: str
@@ -251,7 +256,7 @@ class MultiEnergyPark(SceneTypeIII):
         super().__init__(*args, **kwargs)
         self.final_round = final_round
         self.round_timeout_sec = round_timeout_sec
-        self.normal_value = self.demand_value(first_demand)
+        # self.normal_value = self.demand_value(first_demand)
         self.node_update = NodeUpdate(demand,price_ge,self.local)
         # self.demand = demand
         # self.price_ge = price_ge
@@ -259,7 +264,8 @@ class MultiEnergyPark(SceneTypeIII):
     
     # 这个可能需要改为nodeUpdate的checkend
     def check_end(self) -> bool:
-        return self.round_id >= self.final_round
+        return self.node_update.delegate_checkEnd(*self.pre_delegate_value,*self.delegate_value)
+        # return self.round_id >= self.final_round
 
     # 这个不需要改
     def check_end_in_data(self, data: bytes) -> bool:
@@ -269,25 +275,53 @@ class MultiEnergyPark(SceneTypeIII):
             return False
     # 这个需要更改为nodeUpdate中的delegate_update
     def delegate_update(self):
-        if self.local.is_normal:
+        # if self.local.is_normal:
+            # pass
             # also take my own value into consideration since node won't
             # receive its own packet from micronet
-            self.delegate_value = self.normal_value
-        else:
-            self.delegate_value = 0
+            # self.delegate_value = self.normal_value
+        # else:
+            # self.delegate_value = 0
+        self.pre_delegate_value = self.delegate_value
+        gd = typing.List[float]
+        ed = typing.List[float]
+        hd = typing.List[float]
         for _, pkts in self.received_normal_data.all.items():
             # this method is supposed to be called after clearup evil nodes
             pkt = list(pkts)[0]
-            self.delegate_value += self._Data.from_bytes(pkt.data).value
+            values = self._Data.from_bytes(pkt.data).value
+            gd.append(values[0])
+            ed.append(values[1])
+            hd.append(values[2])
+            # self.delegate_value += self._Data.from_bytes(pkt.data).value
+        price = self.node_update.init_price()
+        gp,ep,hp = self.node_update.delegate_update(gd,ed,hd,*price,self.round_id)
+        self.delegate_value = (gp,ep,hp)
         self.logger.info(f'update delegate value to {self.delegate_value}')
 
     def normal_initiate(self):
-        self.normal_value = self.demand_value(self.first_demand)
-
+        # self.normal_value = self.demand_value(self.first_demand)
+        self.normal_value = self.node_update.init_demand()
+    def delegate_getter(self,node_id: int):
+        values = self.delegate_value
+        gp = values[0]
+        ep = values[1]
+        hp = values[2]
+        index = (node_id-1)/4
+        send = [gp,ep,hp[index]]
+        return self._Data(
+            DataType.DelegateToNormal,
+            self.round_id,
+            send,
+            self.check_end(),
+        ).pack()
     # 普通节点更新数据
     # 需要使用nodeUpdate来进行update
     def normal_update(self, data: bytes):
-        self.normal_value = self._Data.from_bytes(data).value + 1
+        value = self._Data.from_bytes(data).value
+        gd,ed,hd,cost_min = self.node_update.normal_node_update(*value)
+        self.normal_value = [gd,ed,hd]
+        # self.normal_value = self._Data.from_bytes(data).value + 1
         self.logger.info(f'update normal value to {self.normal_value}')
 
     def round_timeout(self) -> float:
@@ -331,7 +365,7 @@ class MultiEnergyPark(SceneTypeIII):
             self.logger.info(f'delegate value: {self.delegate_value}')
         if self.local.is_normal:
             self.logger.info(f'normal value: {self.normal_value}')
-
+    
     def demand_value(self,demand_route) -> typing.List[int]:
         demand = pd.read_excel(demand_route, 'Sheet1')
         gasdemand = demand.loc[0,self.local.id] # 气需求
