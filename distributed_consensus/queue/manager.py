@@ -15,6 +15,8 @@ EOC = None
 
 NodeFilter = Callable[[BaseNode], bool]
 
+# 代表回复普通节点的数据获取回调
+DataGetter = Callable[[int], bytes]
 
 def all_node(n: BaseNode) -> bool:
     return True
@@ -103,6 +105,24 @@ class QueueManager:
                 continue
 
             self.logger.debug(f'broadcast pkt to remote {node_id}')
+            to_queue = QueuedPacket(
+                origin=self.local,
+                send_to=remote,
+                received_from=None,
+                data=pkt,
+                full_packet=None,
+            )
+            await egress.put(to_queue)
+    async def broadcast_adapt(self, getter: DataGetter, filter_: NodeFilter = all_node):
+        for node_id, (_, egress) in self._by_node.items():
+            remote = self.node_manager.get_node(node_id)
+            assert remote is not None
+            if not filter_(remote):
+                self.logger.debug(f'{remote} is filtered out by {filter!r}')
+                continue
+
+            self.logger.debug(f'broadcast pkt to remote {node_id}')
+            pkt = getter(node_id)
             to_queue = QueuedPacket(
                 origin=self.local,
                 send_to=remote,
