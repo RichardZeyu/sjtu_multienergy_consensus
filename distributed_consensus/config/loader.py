@@ -57,6 +57,7 @@ class Config:
         port: int,
         private_key_file: str,
         public_key_file: str,
+        hub: str,
         is_delegate: bool,
         is_normal: bool,
         is_local: bool,
@@ -105,6 +106,7 @@ class Config:
             is_delegate=is_delegate,
             is_normal=is_normal,
             manager=self.node_manager,
+            hub=hub
         )
         self.nodes.append(node)
         if is_local:
