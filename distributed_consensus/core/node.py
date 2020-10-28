@@ -11,7 +11,7 @@ class Node(AutoRegisterNode):
     port: int
     public_key: typing.Union[str, PKey]
     private_key: typing.Union[str, PKey, None]
-
+    hub: str
     def __init__(
         self,
         id,
@@ -19,6 +19,7 @@ class Node(AutoRegisterNode):
         port,
         public_key,
         private_key=None,
+        hub= None,
         manager=None,
         is_delegate=False,
         is_normal=False,
@@ -35,6 +36,7 @@ class Node(AutoRegisterNode):
         self.port = port
         self.public_key = public_key
         self.private_key = private_key
+        self.hub = hub
 
     def to_dict(self) -> typing.Dict[str, typing.Any]:
         return {
