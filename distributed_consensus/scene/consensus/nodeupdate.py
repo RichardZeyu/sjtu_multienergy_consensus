@@ -6,32 +6,33 @@ import typing
 from ...core.node import Node
 
 class NodeUpdate:
-    gasdemand: object
+    gasdemand_raw: object
     elecdemand_raw: object
     heatdemand_raw: object
     cooldemand_raw: object
     price_raw: object
-    node: object
-    branch: object
-    NodeInOut: object
+    node_raw: object
+    branch_raw: object
+    NodeInOut_raw: object
     renewerable_energy_raw: object
 
     local: Node
-    def __init__(self,demand: str,price_ge: str, hub: str,local: Node):
+    def __init__(self,demand: str,price_ge: str,local: Node):
         super().__init__()
         self.local = local
-        gasdemand_raw = pd.read_excel(demand, 'GasDemand')
-        elecdemand_raw = pd.read_excel(demand, 'ElecDemand')
-        heatdemand_raw = pd.read_excel(demand, 'HeatDemand')
-        cooldemand_raw = pd.read_excel(demand, 'CoolDemand')
+        self.gasdemand_raw = pd.read_excel(demand, 'GasDemand')
+        self.elecdemand_raw = pd.read_excel(demand, 'ElecDemand')
+        self.heatdemand_raw = pd.read_excel(demand, 'HeatDemand')
+        self.cooldemand_raw = pd.read_excel(demand, 'CoolDemand')
 
-        price_raw = pd.read_excel(price_ge, 'Sheet1')
+        self.price_raw = pd.read_excel(price_ge, 'Sheet1')
 
-        node = pd.read_excel(hub, 'node')
-        branch = pd.read_excel(hub, 'branch')
-        NodeInOut = pd.read_excel(hub, 'NodeInOut')
-        renewerable_energy_raw = pd.read_excel(hub, 'Renewable_Energy')
-
+        self.node_raw = pd.read_excel(local.hub, 'node')
+        self.branch_raw = pd.read_excel(local.hub, 'branch')
+        self.NodeInOut_raw = pd.read_excel(local.hub, 'NodeInOut')
+        self.renewerable_energy_raw = pd.read_excel(local.hub, 'Renewable_Energy')
+    
+    #输入为两个三元组，分别为上一轮迭代的各能源价格与更新后的价格
     def delegate_checkEnd(self,gp1,ep1,hp1, gp2, ep2, hp2):
         eps = 1e-3
         norm = ((gp2-gp1)**2 + (ep2-ep1)**2 + (hp2[0]-hp1[0])**2 + (hp2[1]-hp1[1])**2 + (hp2[2]-hp1[2])**2)**0.5
@@ -39,7 +40,15 @@ class NodeUpdate:
             flag_end = 1
         else:
             flag_end = 0
+
+    #普通节点根据代表发来价格，更新自身多能源需求量
+    #输入为三元组，即三个价格，分别为气价、电价、热价：(gp, ep, hp)
+    #输出为四元组，即本普通节点（微网）在该价格下的各能源的最优需求量，分别为气需求、电需求、热需求：(gd, ed, hd)，以及此时的最低成本cost_min
     def normal_node_update(self,gp,ep,hp):
+        node = self.node_raw
+        branch = self.branch_raw
+        NodeInOut = self.NodeInOut_raw
+        renewerable_energy_raw = self.renewerable_energy_raw
         #时段12负荷（目前仿真只做时段12，其他时段原理相同）
         ##特别说明：第一个参数0表示微网1，微网2,3...依次类推##
         gasdemand =  self.gasdemand_raw.loc[self.local.id-1, 'T12']
@@ -165,12 +174,20 @@ class NodeUpdate:
         ##  ed = res.x[2]
         ##  hd = res.x[7]
         ##  cost_min = res.fun
-
+        gd = res.x[1]
+        ed = res.x[2]
+        hd = res.x[7]
+        cost_min = res.fun
         # print('最小值：',res.fun)
         # print('最优解：',res.x)
         # print('迭代终止是否成功：', res.success)
         # print('迭代终止原因：', res.message)
-
+        return gd,ed,hd,cost_min
+    
+    #代表根据所有普通节点发来的各能源需求量，更新各能源价格
+    #输入为3个数量十二元组和1个价格三元组+当前迭代期标号，即12个微网发来的各能源需求量，分别为气需求、电需求、热需求：(gd, ed, hd)；以及迭代至当前时计算出的新的各能源价格，分别为气价、电价、热价：(gp, ep, hp)
+    #输出为三元组，即本代表计算出的新的各能源价格，分别为气价、电价、热价：(gp, ep, hp)
+    ##其中，代表计算出的热价hp本身也是一个三元组: 微网1-4共享hp[0], 微网5-8共享hp[1], 微网9-12共享hp[2]
     def delegate_update(self,gd,ed,hd, gp,ep,hp, round_id):
         gasdemand = self.gasdemand_raw.loc[12, 'T12'] # sum
         elecdemand = self.elecdemand_raw.loc[12, 'T12'] # sum
@@ -261,4 +278,20 @@ class NodeUpdate:
         ep = ep + 1/(A+B*round_id)*SG_elec
         for i in range(3):
             hp[i] = hp[i] + 1/(A+B*round_id)*SG_heat[i]
+        return gp,ep,hp
+    
+    # 初始化第一轮的需求
+    def init_demand(self):       
+        gp,ep,hp = self.init_price()
+        gd,ed,hd,cost_min = self.normal_node_update(gp,ep,hp[0])
+        return [gd,ed,hd]
+    
+    # 初始化第一轮的价格   
+    def init_price(self):
+        GasPrice = self.price_raw.loc[11, 'gas'] # 时段12(下标为11)的数据
+        ElecPrice = self.price_raw.loc[11, 'elec'] # 时段12(下标为11)的数据
+        gp = 0.9 * GasPrice
+        ep = 0.5 * ElecPrice
+        hp = [200,200,200]
+        return gp,ep,hp
 
