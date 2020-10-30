@@ -79,7 +79,23 @@ class NodeDataMap:
             return None
         top, freq = counter.most_common(1)[0]
         return top if freq > threshold else None
-    
+    def extract_majority_adapt(self,threshold: float = -1):
+        for pkts in self.table.values():
+            pkt = list(pkts)[0]
+            self.logger.warning(f'{pkt}')
+        counter: typing.Counter[bytes] = Counter()
+        counter.update(
+            [
+                list(pkts)[0].data
+                for pkts in self.table.values()
+                if len(pkts) == 1
+            ]
+        )
+        if not counter:
+            return None
+        top, freq = counter.most_common(1)[0] # 出现频率最高的一个单词
+        self.logger.warning(f'top = {top} freq = {freq} threshold={threshold}')
+        return top if freq >= threshold else None
     # 移除作恶节点
     def drop_evil_nodes(
         self,
@@ -159,7 +175,7 @@ class AbstractScene(ABC):
         self.local_delegate_data = data
     def delegate_send_adapt(self,getter: DataGetter):
         self.adapter.broadcast_adapt(getter, filter_=normal_only)
-
+        # self.local_delegate_data = data
     def leader_send(self):
         data = self.leader_data()
         self.adapter.broadcast(data, filter_=all_node)
@@ -177,6 +193,8 @@ class AbstractScene(ABC):
         return False
 
     def extract_majority(self, received: NodeDataMap):
+        # local_delegate_data 为本地代表发送的数据
+        # received 为 received_delegate_data，从代表中接收到的数据
         initial: typing.Optional[typing.List[bytes]]
         self.logger.debug(f'trying to extract majority from {received}')
         if self.local.is_delegate and self.local_delegate_data is not None:
@@ -186,7 +204,10 @@ class AbstractScene(ABC):
         return received.extract_majority(
             initial=initial, threshold=self.node_manager.delegate_num / 2,
         )
-
+    def extract_majority_adapt(self,received: NodeDataMap):
+        return received.extract_majority_adapt(
+            threshold=self.node_manager.delegate_num / 2,
+        )
     def is_delegate_packet(
         self, pkt: QueuedPacket, expected_data_type: typing.Optional[DataType]
     ) -> bool:
