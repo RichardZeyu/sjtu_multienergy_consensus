@@ -44,7 +44,6 @@ nodes:
         #is_normal: yes
         #hub: "./tests/data/HUB3.xlsx"
 
-
 # 场景配置，微网内各节点该项配置应相同。
 scene:
     # 微网建立后需要运行的场景类路径，路径使用Python导入规范命名
@@ -52,7 +51,7 @@ scene:
     # 创建场景类实例时需要传入的参数。程序使用keyword方式传参，因此参数顺序并不重要。
     params:
         final_round: 5
-        round_timeout_sec: 60.0
+        round_timeout_sec: 10.0
         first_demand: "./tests/data/first_demand.xlsx"
         demand: "./tests/data/demand.xlsx"
         price_ge: "./tests/data/price_ge.xlsx"
