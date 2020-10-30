@@ -1,3 +1,4 @@
+import logging
 from scipy.optimize import minimize
 import pandas as pd
 import numpy as np
@@ -5,6 +6,7 @@ import typing
 
 from ...core.node import Node
 
+L = logging.getLogger(__name__)
 class NodeUpdate:
     gasdemand_raw: object
     elecdemand_raw: object
@@ -15,7 +17,7 @@ class NodeUpdate:
     branch_raw: object
     NodeInOut_raw: object
     renewerable_energy_raw: object
-
+    logger: logging.Logger
     local: Node
     def __init__(self,demand: str,price_ge: str,local: Node):
         super().__init__()
@@ -31,15 +33,20 @@ class NodeUpdate:
         self.branch_raw = pd.read_excel(local.hub, 'branch')
         self.NodeInOut_raw = pd.read_excel(local.hub, 'NodeInOut')
         self.renewerable_energy_raw = pd.read_excel(local.hub, 'Renewable_Energy')
-    
+        self.logger = L.getChild(f'{self.__class__.__name__}-{self.local.id}')
     #输入为两个三元组，分别为上一轮迭代的各能源价格与更新后的价格
     def delegate_checkEnd(self,gp1,ep1,hp1, gp2, ep2, hp2):
+        flag_end = 0
         eps = 1e-3
         norm = ((gp2-gp1)**2 + (ep2-ep1)**2 + (hp2[0]-hp1[0])**2 + (hp2[1]-hp1[1])**2 + (hp2[2]-hp1[2])**2)**0.5
+
+        self.logger.warning(f'pre data {(gp1,ep1,hp1)},next data {(gp2,ep2,hp2)}')
+        self.logger.warning(f'norm {norm},eps {eps}')
         if norm < eps:
             flag_end = 1
         else:
             flag_end = 0
+        return flag_end
 
     #普通节点根据代表发来价格，更新自身多能源需求量
     #输入为三元组，即三个价格，分别为气价、电价、热价：(gp, ep, hp)
@@ -199,6 +206,7 @@ class NodeUpdate:
         #判断当前迭代价格与外部源价格比对
         eps = 1e-2
         #迭代气价与外部气源
+        flag_gas = 0
         if gp - GasPrice > eps:
             gas_max = 2*(gasdemand + 4480)
             gas_min = 2*(gasdemand + 4480)
@@ -211,6 +219,7 @@ class NodeUpdate:
             flag_gas = 1
 
         #迭代电价与外部电源
+        flag_elec = 0
         if ep - ElecPrice > eps:
             elec_max = elecdemand + 500
             elec_min = elecdemand + 500
