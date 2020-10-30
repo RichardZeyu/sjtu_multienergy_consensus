@@ -1,3 +1,4 @@
+import copy
 import typing
 import struct
 import pandas as pd
@@ -6,6 +7,7 @@ from datetime import datetime, timedelta
 from time import sleep
 
 from .scene_type_I import SceneTypeI
+
 from ..core.node import Node
 from ..core.node_manager import NodeManager
 from ..sync_adapter import QueuedPacket, QueueManagerAdapter, normal_only
@@ -83,6 +85,9 @@ class SceneTypeIII(AbstractScene):
             self.normal_send()
         # delegate 代表
         while not self.scene_end and not local_delegate_ending:
+            self.logger.info(
+                f'round {self.round_id} begin'
+            )
             # step 1
             if self.round_id > 1 and self.local.is_delegate:
                 # 第二步是代表共识，排除作恶节点
@@ -110,9 +115,7 @@ class SceneTypeIII(AbstractScene):
             self.received_delegate_data.clear()
             now = datetime.utcnow()
             round_end = now + timedelta(seconds=self.round_timeout())
-            self.logger.info(
-                f'round {self.round_id} begin, will end by {round_end}'
-            )
+            
 
             # step 2 ~ 5, wrapped by receiving loop
 
@@ -126,8 +129,9 @@ class SceneTypeIII(AbstractScene):
             # add a gap for possible timing error. otherwise quick nodes
             # will send packet for next round but slow nodes may drop them due
             # to invalid round id
-            sleep(2)
-
+            # 这里稍微等待久一点，能让所有的节点都完成了上一轮的操作，这样能避免出现roud_id不一致问题
+            sleep(5)
+            
             self.round_id += 1
         self.scene_complete()
         self.done_cb()
@@ -172,12 +176,18 @@ class SceneTypeIII(AbstractScene):
         self.received_delegate_data.add(pkt)
         # 下面函数是用来判断
         # 如果接收到大部分的代表返回的数据，那么就更新数据再广播给代表
-        data = self.extract_majority(self.received_delegate_data)
+        # data = self.extract_majority(self.received_delegate_data)
+        data = self.extract_majority_adapt(self.received_delegate_data)
         if data is not None:
             self.normal_update(data)
             self.normal_phase_done = True
             self.normal_send()
             self.scene_end = self.check_end_in_data(data)
+        else:
+            # 当只有两个节点的情况下，这里是none的，普通节点不会再发送数据到代表，代表会把该节点判定为作恶节点，所以测试时候至少需要三个节点
+            self.logger.warn(
+                'extract majority is none'
+            )
     # 代表节点处理，把来自普通节点的数据进行处理
     def delegate_node_action(self, pkt: QueuedPacket):
         # 广播 如果该节点已经进来过了，直接退出（无论是从代表转发或者是微网发送过来），来自代表节点也直接退出
@@ -258,13 +268,14 @@ class MultiEnergyPark(SceneTypeIII):
         self.round_timeout_sec = round_timeout_sec
         # self.normal_value = self.demand_value(first_demand)
         self.node_update = NodeUpdate(demand,price_ge,self.local)
+        self.delegate_value = self.node_update.init_price() # 初始价格
         # self.demand = demand
         # self.price_ge = price_ge
         # self.hub = hub
     
     # 这个可能需要改为nodeUpdate的checkend
     def check_end(self) -> bool:
-        return self.node_update.delegate_checkEnd(*self.pre_delegate_value,*self.delegate_value)
+        return self.node_update.delegate_checkEnd(*self.pre_delegate_value,*self.delegate_value) or self.round_id >= self.final_round
         # return self.round_id >= self.final_round
 
     # 这个不需要改
@@ -282,10 +293,10 @@ class MultiEnergyPark(SceneTypeIII):
             # self.delegate_value = self.normal_value
         # else:
             # self.delegate_value = 0
-        self.pre_delegate_value = self.delegate_value
-        gd = typing.List[float]
-        ed = typing.List[float]
-        hd = typing.List[float]
+        self.pre_delegate_value =copy.deepcopy(self.delegate_value) 
+        gd = []
+        ed = []
+        hd = []
         for _, pkts in self.received_normal_data.all.items():
             # this method is supposed to be called after clearup evil nodes
             pkt = list(pkts)[0]
@@ -294,9 +305,8 @@ class MultiEnergyPark(SceneTypeIII):
             ed.append(values[1])
             hd.append(values[2])
             # self.delegate_value += self._Data.from_bytes(pkt.data).value
-        price = self.node_update.init_price()
-        gp,ep,hp = self.node_update.delegate_update(gd,ed,hd,*price,self.round_id)
-        self.delegate_value = (gp,ep,hp)
+        # price = self.delegate_value
+        self.delegate_value = self.node_update.delegate_update(gd,ed,hd,*self.delegate_value,self.round_id)
         self.logger.info(f'update delegate value to {self.delegate_value}')
 
     def normal_initiate(self):
@@ -307,7 +317,7 @@ class MultiEnergyPark(SceneTypeIII):
         gp = values[0]
         ep = values[1]
         hp = values[2]
-        index = (node_id-1)/4
+        index = (int)((node_id-1)/4)
         send = [gp,ep,hp[index]]
         return self._Data(
             DataType.DelegateToNormal,
@@ -351,6 +361,7 @@ class MultiEnergyPark(SceneTypeIII):
                 pkt.origin.id,
                 pkt.received_from.id if pkt.received_from else 'unknown',
             )
+            self.logger.debug(f'current round_id {self.round_id},node round_id {data.round_id}')
             return data.round_id == self.round_id
         except:
             self.logger.warn(f'cannot parse {pkt}', exc_info=True)
