@@ -338,6 +338,8 @@ class TCPConnectionHandler:
                 self.logger.debug(f'node {node.id} is local, continue')
                 # meet local node in sorted node list, should connect to
                 # following nodes
+                # self.connect_in_background(node)
+                # self.pending_nodes.add(node)
                 should_connect = True
             elif self.local_node.pure_normal and node.pure_normal:
                 self.logger.debug(
@@ -350,7 +352,7 @@ class TCPConnectionHandler:
             else:
                 self.logger.debug(f'expect node {node.id} to connect')
                 self.pending_nodes.add(node)
-        # wait_micronet_up(micronet_ok)等待微网启动并释放信号
+        # wait_micronet_up(micronet_ok)等待微网启动(连接进来)并释放信号
         asyncio.create_task(self.wait_micronet_up(micronet_ok))
 
         return micronet_ok
