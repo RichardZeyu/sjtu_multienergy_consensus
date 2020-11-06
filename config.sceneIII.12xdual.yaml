@@ -21,7 +21,7 @@ nodes:
         private_key_file: "./tests/test_keys/node1.key"
         public_key_file: "./tests/test_keys/node1.pub"
         # 节点是否为代表
-        is_delegate: yes
+        is_delegate: no
         # 节点是否为普通节点
         is_normal: yes
         hub: "./tests/data/HUB1.xlsx"
@@ -31,7 +31,7 @@ nodes:
         port: 11112
         private_key_file: "./tests/test_keys/node2.key"
         public_key_file: "./tests/test_keys/node2.pub"
-        is_delegate: yes
+        is_delegate: no
         is_normal: yes
         hub: "./tests/data/HUB2.xlsx"
     3:
@@ -40,7 +40,7 @@ nodes:
         port: 11113
         private_key_file: "./tests/test_keys/node3.key"
         public_key_file: "./tests/test_keys/node3.pub"
-        is_delegate: yes
+        is_delegate: no
         is_normal: yes
         hub: "./tests/data/HUB3.xlsx"
     4:
@@ -49,7 +49,7 @@ nodes:
         port: 11114
         private_key_file: "./tests/test_keys/node3.key"
         public_key_file: "./tests/test_keys/node3.pub"
-        is_delegate: yes
+        is_delegate: no
         is_normal: yes
         hub: "./tests/data/HUB4.xlsx"
     5:
@@ -58,7 +58,7 @@ nodes:
         port: 11115
         private_key_file: "./tests/test_keys/node3.key"
         public_key_file: "./tests/test_keys/node3.pub"
-        is_delegate: yes
+        is_delegate: no
         is_normal: yes
         hub: "./tests/data/HUB5.xlsx"
     6:
@@ -67,7 +67,7 @@ nodes:
         port: 11116
         private_key_file: "./tests/test_keys/node3.key"
         public_key_file: "./tests/test_keys/node3.pub"
-        is_delegate: yes
+        is_delegate: no
         is_normal: yes
         hub: "./tests/data/HUB6.xlsx"
     7:
@@ -76,7 +76,7 @@ nodes:
         port: 11117
         private_key_file: "./tests/test_keys/node3.key"
         public_key_file: "./tests/test_keys/node3.pub"
-        is_delegate: yes
+        is_delegate: no
         is_normal: yes
         hub: "./tests/data/HUB7.xlsx"
     8:
@@ -85,7 +85,7 @@ nodes:
         port: 11118
         private_key_file: "./tests/test_keys/node3.key"
         public_key_file: "./tests/test_keys/node3.pub"
-        is_delegate: yes
+        is_delegate: no
         is_normal: yes
         hub: "./tests/data/HUB8.xlsx"
     9:
@@ -94,7 +94,7 @@ nodes:
         port: 11119
         private_key_file: "./tests/test_keys/node3.key"
         public_key_file: "./tests/test_keys/node3.pub"
-        is_delegate: yes
+        is_delegate: no
         is_normal: yes
         hub: "./tests/data/HUB9.xlsx"
     10:
@@ -103,7 +103,7 @@ nodes:
         port: 11120
         private_key_file: "./tests/test_keys/node3.key"
         public_key_file: "./tests/test_keys/node3.pub"
-        is_delegate: yes
+        is_delegate: no
         is_normal: yes
         hub: "./tests/data/HUB10.xlsx"
     11:
@@ -112,7 +112,7 @@ nodes:
         port: 11121
         private_key_file: "./tests/test_keys/node3.key"
         public_key_file: "./tests/test_keys/node3.pub"
-        is_delegate: yes
+        is_delegate: no
         is_normal: yes
         hub: "./tests/data/HUB11.xlsx"
     12:
@@ -121,12 +121,9 @@ nodes:
         port: 11122
         private_key_file: "./tests/test_keys/node3.key"
         public_key_file: "./tests/test_keys/node3.pub"
-        is_delegate: yes
+        is_delegate: no
         is_normal: yes
-        hub: "./tests/data/HUB12.xlsx"
-    
-        
-
+        hub: "./tests/data/HUB12.xlsx"  
 
 # 场景配置，微网内各节点该项配置应相同。
 scene:
@@ -134,11 +131,13 @@ scene:
     class: distributed_consensus.scene.scene_type_III.MultiEnergyPark
     # 创建场景类实例时需要传入的参数。程序使用keyword方式传参，因此参数顺序并不重要。
     params:
-        final_round: 5
-        round_timeout_sec: 10.0
+        final_round: 2000
+        round_timeout_sec: 30.0
+        round_end_cache: "./tests/cache/round_end.txt"
         first_demand: "./tests/data/first_demand.xlsx"
         demand: "./tests/data/demand.xlsx"
         price_ge: "./tests/data/price_ge.xlsx"
+        initial: "./tests/data/initialValue.xlsx"
         
 
 

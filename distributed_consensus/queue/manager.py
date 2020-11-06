@@ -191,6 +191,7 @@ class QueueManager:
         }
 
         if not tasks:
+            # 这个是_by_node 为空的情况
             self.logger.warn('no active queue, in closing or reconnecting')
             return None
 

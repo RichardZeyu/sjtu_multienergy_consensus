@@ -23,10 +23,10 @@ class SceneTypeIII(AbstractScene):
     round_id: int
     received_normal_data: NodeDataMap
     received_delegate_data: NodeDataMap
-
+    
     normal_phase_done: bool
     scene_end: bool
-
+    
     def __init__(
         self,
         local: Node,
@@ -68,7 +68,22 @@ class SceneTypeIII(AbstractScene):
     @abstractmethod
     def round_timeout(self) -> float:
         raise NotImplementedError()
-
+    @abstractmethod
+    def write_round_end_time(self,seconds):
+        raise NotImplementedError()
+    @abstractmethod
+    def read_round_end_time(self):
+        raise NotImplementedError()
+    @abstractmethod
+    def write_round_demand(self):
+        raise NotImplementedError()
+    def check_round_end(self):
+        round_end = self.read_round_end_time()
+        now = datetime.utcnow()
+        while(now<round_end):
+            sleep(1)
+            round_end = self.read_round_end_time()
+            now = datetime.utcnow()
     def scene_complete(self):
         self.logger.info('scene completed.')
 
@@ -130,7 +145,7 @@ class SceneTypeIII(AbstractScene):
             # will send packet for next round but slow nodes may drop them due
             # to invalid round id
             # 这里稍微等待久一点，能让所有的节点都完成了上一轮的操作，这样能避免出现roud_id不一致问题
-            sleep(5)
+            self.check_round_end()
             
             self.round_id += 1
         self.scene_complete()
@@ -140,6 +155,7 @@ class SceneTypeIII(AbstractScene):
     # 其他代表获取到数据，添加到缓存
     # 普通节点获取到数据，更新发送给所有代表，scene_end = true
     def round(self, round_end: datetime):
+        round_over = False
         while not self.scene_end:
             pkt = self.adapter.wait_next_pkt(run_till=round_end)
             if pkt is None:
@@ -147,6 +163,7 @@ class SceneTypeIII(AbstractScene):
                 self.logger.info(
                     f'receive timeout, round {self.round_id} over'
                 )
+                round_over = True
                 break
             # 解压数据并且判断是否是当前一轮的数据
             if not self.is_packet_valid(pkt):
@@ -157,6 +174,10 @@ class SceneTypeIII(AbstractScene):
             self.normal_node_action(pkt)
             # step 4 pkt包含了remote等信息，看看是否是根据这个来回传给普通节点
             self.delegate_node_action(pkt)
+        if(round_over):
+            self.write_round_demand()
+            self.write_round_end_time(10)
+            # 写入round_end时间
     # 普通节点处理，把来自代表的数据进行处理
     def normal_node_action(self, pkt: QueuedPacket):
         if self.normal_phase_done:
@@ -206,15 +227,19 @@ class SceneTypeIII(AbstractScene):
         # 数据添加到缓存map中
         self.received_normal_data.add(pkt)
     
+    
+
 class MultiEnergyPark(SceneTypeIII):
     final_round: int
     round_timeout_sec: float
+    round_end_cache: str
 
     normal_value: typing.List[float]
+    
     delegate_value: () # 本轮的价格
     pre_delegate_value: () # 上一轮的价格
     
-
+    round_end_time:datetime
     node_update: NodeUpdate
     # excel文档路径
     # first_demand: str
@@ -262,20 +287,22 @@ class MultiEnergyPark(SceneTypeIII):
                 *self.value,
                 1 if self.is_end else 0,
             )
-    def __init__(self, final_round, round_timeout_sec,first_demand,demand,price_ge, *args, **kwargs):
+    
+    def __init__(self, final_round, round_timeout_sec,first_demand,demand,price_ge,initial,round_end_cache="./tests/cache/round_end.txt", *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.final_round = final_round
         self.round_timeout_sec = round_timeout_sec
         # self.normal_value = self.demand_value(first_demand)
-        self.node_update = NodeUpdate(demand,price_ge,self.local)
+        self.node_update = NodeUpdate(demand,price_ge,initial,self.local)
         self.delegate_value = self.node_update.init_price() # 初始价格
+        self.round_end_cache = round_end_cache # 缓存位置
         # self.demand = demand
         # self.price_ge = price_ge
         # self.hub = hub
     
     # 这个可能需要改为nodeUpdate的checkend
     def check_end(self) -> bool:
-        return self.node_update.delegate_checkEnd(*self.pre_delegate_value,*self.delegate_value) or self.round_id >= self.final_round
+        return self.node_update.delegate_checkEnd(*self.pre_delegate_value,*self.delegate_value) 
         # return self.round_id >= self.final_round
 
     # 这个不需要改
@@ -306,8 +333,10 @@ class MultiEnergyPark(SceneTypeIII):
             hd.append(values[2])
             # self.delegate_value += self._Data.from_bytes(pkt.data).value
         # price = self.delegate_value
-        self.delegate_value = self.node_update.delegate_update(gd,ed,hd,*self.delegate_value,self.round_id)
+        # 这里delegate_update会在round_id的下一轮才执行，所以这里需要减1
+        self.delegate_value = self.node_update.delegate_update(gd,ed,hd,*self.delegate_value,self.round_id-1)
         self.logger.info(f'update delegate value to {self.delegate_value}')
+        self.write_price()
 
     def normal_initiate(self):
         # self.normal_value = self.demand_value(self.first_demand)
@@ -338,10 +367,11 @@ class MultiEnergyPark(SceneTypeIII):
         return self.round_timeout_sec
 
     def normal_data(self) -> bytes:
-        return self._Data(
+        data = self._Data(
             DataType.NormalToDelegate, self.round_id, self.normal_value, False
         ).pack()
-        # real = self._Data.from_bytes(data)
+        real = self._Data.from_bytes(data)
+        return data
 
     def delegate_data(self) -> bytes:
         return self._Data(
@@ -383,6 +413,36 @@ class MultiEnergyPark(SceneTypeIII):
         elecdemand = demand.loc[1,self.local.id] # 电需求
         heatdemand = demand.loc[2,self.local.id] # 热需求
         return [gasdemand,elecdemand,heatdemand]
-        
-    
-    
+    def write_round_end_time(self,seconds):
+        now = datetime.utcnow()
+        self.round_end_time = now + timedelta(seconds=seconds)
+        timeStruct = self.round_end_time.strftime("%Y-%m-%d %H:%M:%S")
+        file = open(self.round_end_cache,mode="w")
+        file.writelines(timeStruct)
+        file.close()
+    def read_round_end_time(self):
+        file = open(self.round_end_cache,mode="r")
+        timeStruct = file.readline()
+        file.close()
+        try:
+            round_end = datetime.strptime(timeStruct,"%Y-%m-%d %H:%M:%S")
+        except Exception:
+            round_end = self.round_end_time
+        return round_end
+    def write_round_demand(self):
+        pass
+        if self.local.pure_normal:
+            return
+        file = open(f'./tests/cache/price_{self.local.id}_{self.round_id}.csv',mode='a')
+        for _, pkts in self.received_normal_data.all.items():
+            # this method is supposed to be called after clearup evil nodes
+            pkt = list(pkts)[0]
+            values = self._Data.from_bytes(pkt.data).value
+            demand = f'{_},{values[0]},{values[1]},{values[2]}\n'
+            file.writelines(demand)
+        file.close()
+    def write_price(self):
+        price = f'{self.delegate_value[1]},{self.delegate_value[0]},{self.delegate_value[2][0]},{self.delegate_value[2][1]},{self.delegate_value[2][2]}\n'
+        file = open(f'./tests/cache/price{self.local.id}.csv',mode='a')
+        file.writelines(price)
+        file.close()

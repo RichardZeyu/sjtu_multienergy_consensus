@@ -108,6 +108,7 @@ class NodeDataMap:
             (node_id, len({pkt.data for pkt in pkt_set}))
             for (node_id, pkt_set) in self.table.items()
         ]
+        # 作恶的情况下，
         evil_node_ids = filter(lambda x: x[1] != 1, node_recv_num)
 
         for evil, pkt_num in evil_node_ids:
@@ -186,7 +187,8 @@ class AbstractScene(ABC):
     # 代表转发 
     # seen 存储已经转发过的node，如果没有转发，则转发出去。（以此来避免数据在各个代表中循环转发）
     def delegate_forward(self, pkt: QueuedPacket, filter_: NodeFilter) -> bool:
-        if (pkt.origin.id, pkt.data) not in self.seen:
+        # seen?这个不用每轮清空吗?
+        if (pkt.origin.id, pkt.data) not in self.seen: 
             self.seen.add((pkt.origin.id, pkt.data))
             self.adapter.broadcast_forward(pkt, filter_=filter_)
             return True
@@ -264,7 +266,7 @@ class AbstractScene(ABC):
     @abstractmethod
     def run(self):
         raise NotImplementedError()
-
+    
     def is_packet_valid(self, pkt: QueuedPacket) -> bool:
         raise NotImplementedError()
 

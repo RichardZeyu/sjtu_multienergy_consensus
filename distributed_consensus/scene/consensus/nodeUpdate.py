@@ -12,6 +12,7 @@ class NodeUpdate:
     elecdemand_raw: object
     heatdemand_raw: object
     cooldemand_raw: object
+    initial_raw: object
     price_raw: object
     node_raw: object
     branch_raw: object
@@ -19,7 +20,7 @@ class NodeUpdate:
     renewerable_energy_raw: object
     logger: logging.Logger
     local: Node
-    def __init__(self,demand: str,price_ge: str,local: Node):
+    def __init__(self,demand: str,price_ge: str,initial: str, local: Node):
         super().__init__()
         self.local = local
         self.gasdemand_raw = pd.read_excel(demand, 'GasDemand')
@@ -28,6 +29,8 @@ class NodeUpdate:
         self.cooldemand_raw = pd.read_excel(demand, 'CoolDemand')
 
         self.price_raw = pd.read_excel(price_ge, 'Sheet1')
+
+        self.initial_raw = pd.read_excel(initial,'Sheet1')
 
         self.node_raw = pd.read_excel(local.hub, 'node')
         self.branch_raw = pd.read_excel(local.hub, 'branch')
@@ -120,7 +123,13 @@ class NodeUpdate:
         ##微网10：x[24]
         ##微网11：x[24]
         ##微网12：x[24]
-        fun = lambda x : (x[7]*hp + x[2]*ep + x[1]*gp + plant_b * x[27]**2 + plant_c * x[27])
+
+        xindex = [27,24,27,27,24,20,26,26,27,24,24,24]
+        
+        fun = lambda x : (x[7]*hp + x[2]*ep + x[1]*gp + plant_b * x[xindex[self.local.id-1]]**2 + plant_c * x[xindex[self.local.id-1]])
+        #self.logger.debug(f'local_{self.local.id-1} fun = lambda x : (x[7]*hp + x[2]*ep + x[1]*gp + plant_b * x[{xindex[self.local.id-1]}]**2 + plant_c * x[{xindex[self.local.id-1]}])')
+        
+        # fun = lambda x : (x[7]*hp + x[2]*ep + x[1]*gp + plant_b * x[24]**2 + plant_c * x[24])
         #########################################################################
 
         #约束
@@ -129,6 +138,7 @@ class NodeUpdate:
                 #{'type': 'eq', 'fun': lambda x: x[2] - _sum(x, branch.loc[branch['起始节点'] == 2]['支路编号'].values)},
                 #{'type': 'eq', 'fun': lambda x: x[7] - _sum(x, branch.loc[branch['起始节点'] == 3]['支路编号'].values)},
                 #{'type': 'eq', 'fun': lambda x: x[8] - _sum(x, branch.loc[branch['起始节点'] == 4]['支路编号'].values)},
+                
                 {'type': 'eq', 'fun': lambda x: x[8]},
 
                 #总线平衡，节点5678
@@ -173,9 +183,19 @@ class NodeUpdate:
         #设定初始值
         #其中，x0的第一位无效，可填任意值。
         ##特别说明：以下初值为微网1独有，其余微网初值具体见initialValue.xlsx文件##
-        x0 = np.array((0,319.999999505356,-250.003001096491,100,1.11046426604397,100,4.99999999615589,75.9477313666888,0,25.0696544011388,72.8521359323478,1.39999998291272,3.98999994207841,3.98999994224326,119.999996997767,91.1999995463381,159.999999757731,60.7999999826104,68.3999999597335,0,0,0,0,159.999999757731,60.7999999826104,68.3999999597335,100,329.999999987477))
+        # x0 = np.array((0,319.999999505356,-250.003001096491,100,1.11046426604397,100,4.99999999615589,75.9477313666888,0,25.0696544011388,72.8521359323478,1.39999998291272,3.98999994207841,3.98999994224326,119.999996997767,91.1999995463381,159.999999757731,60.7999999826104,68.3999999597335,0,0,0,0,159.999999757731,60.7999999826104,68.3999999597335,100,329.999999987477))
+        # x0 = np.array((0, 239.9999999,59.37759995,100,1.110464267,100,4.999999997,-11.97423777,0,25.78387405,74.85859171,0.799999982,2.165999955,2.165999956,39.99999974,28.49999986,239.9999999,90.05999999,101.004,0,0,0,0,100,0))
         #########################################################################
 
+        # 去除nan值，会影响结果
+        data = self.initial_raw.loc[:,self.local.id]
+        notnan_data =[
+          d
+          for d in data
+          if not np.isnan(d)
+        ]
+        x0 = np.array((0,*notnan_data))
+        # x0[~pd.isnull(x0)]
         res = minimize(fun, x0, method='SLSQP', constraints=cons, options={'disp': True, 'maxiter': 300})
         ##  gd = res.x[1]
         ##  ed = res.x[2]
@@ -190,7 +210,12 @@ class NodeUpdate:
         # print('迭代终止是否成功：', res.success)
         # print('迭代终止原因：', res.message)
         return gd,ed,hd,cost_min
-    
+    islog=False
+    def log_x(self,xindex,x):
+        if not self.islog:
+            self.logger.debug(f'local_{self.local.id} x {x}')
+            self.logger.debug(f'local_{self.local.id} plan{x[xindex[self.local.id-1]]}')
+            self.islog = True
     #代表根据所有普通节点发来的各能源需求量，更新各能源价格
     #输入为3个数量十二元组和1个价格三元组+当前迭代期标号，即12个微网发来的各能源需求量，分别为气需求、电需求、热需求：(gd, ed, hd)；以及迭代至当前时计算出的新的各能源价格，分别为气价、电价、热价：(gp, ep, hp)
     #输出为三元组，即本代表计算出的新的各能源价格，分别为气价、电价、热价：(gp, ep, hp)
@@ -223,7 +248,7 @@ class NodeUpdate:
         if ep - ElecPrice > eps:
             elec_max = elecdemand + 500
             elec_min = elecdemand + 500
-        elif gp - GasPrice < -eps:
+        elif ep - ElecPrice < -eps:
             elec_max = 0
             elec_min = 0
         else:

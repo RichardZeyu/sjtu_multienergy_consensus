@@ -55,6 +55,7 @@ scene:
         first_demand: "./tests/data/first_demand.xlsx"
         demand: "./tests/data/demand.xlsx"
         price_ge: "./tests/data/price_ge.xlsx"
+        initial: "./tests/data/initialValue.xlsx"
         
 
 

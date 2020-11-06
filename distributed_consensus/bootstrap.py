@@ -2,6 +2,8 @@ from .config import Config, config
 from .transport.tcp.conn import TCPConnectionHandler, TCPProtocolV1
 from .queue import QueueManager
 from .sync_adapter import QueueManagerAdapter
+from .scene.consensus.nodeUpdate import NodeUpdate
+from distributed_consensus.demand import Demand
 
 import logging
 import asyncio
@@ -33,10 +35,13 @@ async def async_main():
     L.info(f'local node is delegate: {c.local_node.is_delegate}')
 
     queue = QueueManager(c.local_node, c.node_manager)
+
+    # demandtest = Demand()
+    # demandtest.test_demand(c,**c.scene_parameters)
     conn = TCPConnectionHandler(
         c.local_node, c.node_manager, queue, TCPProtocolV1
     )
-    # 异步方法 获取EventLoop
+     # 异步方法 获取EventLoop
     loop = asyncio.get_running_loop()
     adapter = QueueManagerAdapter(queue, loop)
     # asyncio.Event() 用来协同工作
@@ -45,6 +50,7 @@ async def async_main():
     if await conn.setup_and_wait_micronet(
         timeout=c.transport_parameters['tcpv1']['micronet_init_sec']
     ):
+    #if True :
         # 普通节点发送数据
         L.info('micronet established')
         scene = c.scene_class(
