@@ -55,6 +55,9 @@ class SceneTypeIII(AbstractScene):
     def delegate_update(self):
         raise NotImplementedError()
     @abstractmethod
+    def normal_getter(self, int)-> float:
+        raise NotImplementedError()
+    @abstractmethod
     def delegate_getter(self, int)-> float:
         raise NotImplementedError()
     @abstractmethod
@@ -97,7 +100,8 @@ class SceneTypeIII(AbstractScene):
             self.normal_initiate()
             # 不用初始化数据，__init__方法里有初始化
             # 初始需求量发送
-            self.normal_send()
+            # self.normal_send()
+            self.normal_send_adpt(self.normal_getter)
         # delegate 代表
         while not self.scene_end and not local_delegate_ending:
             self.logger.info(
@@ -341,6 +345,13 @@ class MultiEnergyPark(SceneTypeIII):
     def normal_initiate(self):
         # self.normal_value = self.demand_value(self.first_demand)
         self.normal_value = self.node_update.init_demand()
+    def normal_getter(self,node_id: int):
+        # 这里需要处理一下 normal_value
+        data = self._Data(
+            DataType.NormalToDelegate, self.round_id, self.normal_value, False
+        ).pack()
+        # real = self._Data.from_bytes(data)
+        return data
     def delegate_getter(self,node_id: int):
         values = self.delegate_value
         gp = values[0]
@@ -370,7 +381,7 @@ class MultiEnergyPark(SceneTypeIII):
         data = self._Data(
             DataType.NormalToDelegate, self.round_id, self.normal_value, False
         ).pack()
-        real = self._Data.from_bytes(data)
+        # real = self._Data.from_bytes(data)
         return data
 
     def delegate_data(self) -> bytes:
