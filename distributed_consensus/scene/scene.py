@@ -166,7 +166,8 @@ class AbstractScene(ABC):
         data = self.normal_data()
         # 广播消息 filter_相当于一个代理方法(表达式、回调)
         self.adapter.broadcast(data, filter_=delegate_only)
-
+    def normal_send_adpt(self,getter: DataGetter):
+        self.adapter.broadcast(getter, filter_=delegate_only)
     def delegate_send(self):
         data = self.delegate_data()
         self.adapter.broadcast(data, filter_=normal_only)
