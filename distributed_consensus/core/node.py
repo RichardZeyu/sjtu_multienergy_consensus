@@ -4,7 +4,7 @@ from .node_manager import AutoRegisterNode
 from OpenSSL.crypto import PKey
 from pprint import pformat
 from ipaddress import ip_address
-
+from .normal_evil import NormalEvil
 
 class Node(AutoRegisterNode):
     ip: str
@@ -12,6 +12,7 @@ class Node(AutoRegisterNode):
     public_key: typing.Union[str, PKey]
     private_key: typing.Union[str, PKey, None]
     hub: str
+    normal_evil: NormalEvil
     def __init__(
         self,
         id,
