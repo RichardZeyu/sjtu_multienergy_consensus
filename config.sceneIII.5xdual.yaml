@@ -24,6 +24,16 @@ nodes:
         is_delegate: no
         # 节点是否为普通节点
         is_normal: yes
+        normal_evil: 
+            ignore: [4,5]
+            ignore_all: false
+            diffrence: 
+                -
+                    node: 3
+                    data: 'lambda gd,ed,hd:[0.1*gd,0.1*ed,0.1*hd]'
+                -
+                    node: 4 
+                    data: 'lambda gd,ed,hd:[0.2*gd,0.2*ed,0.2*hd]'
         hub: "./tests/data/HUB1.xlsx"
     2:
         transport: tcpv1
