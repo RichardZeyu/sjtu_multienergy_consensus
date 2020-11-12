@@ -114,7 +114,7 @@ class Config:
             ignore = normal_evil.get('ignore')
             ignore_all = normal_evil.get('ignore_all')
             normal = NormalEvil(ignore,ignore_all,diffrence) 
-        delegate = Node
+        delegate = None
         if delegate_evil:
             ignore = delegate_evil.get('ignore')
             ignore_all = delegate_evil.get('ignore_all')

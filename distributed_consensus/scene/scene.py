@@ -168,6 +168,11 @@ class AbstractScene(ABC):
         self.adapter.broadcast(data, filter_=delegate_only)
     def normal_send_adpt(self,getter: DataGetter):
         self.adapter.broadcast_adapt(getter, filter_=delegate_only)
+    # 发送数据给自己，这个是当自己即是普通节点，又是代表节点时
+    # 只是把数据添加到buffer中，不必真的做发送操作
+    def send2itselft_adpt(self,getter:DataGetter):
+        self.adapter.send2itselft_adpt(getter)
+        
     def delegate_send(self):
         data = self.delegate_data()
         self.adapter.broadcast(data, filter_=normal_only)
@@ -178,6 +183,10 @@ class AbstractScene(ABC):
     def delegate_send_adapt(self,getter: DataGetter):
         self.adapter.broadcast_adapt(getter, filter_=normal_only)
         # self.local_delegate_data = data
+    # 发送数据给自己，这个是当自己即是普通节点，又是代表节点时
+    # 只是把数据添加到buffer中，不必真的做发送操作
+    def delegate_send2itselft_adpt(self,getter: DataGetter):
+        pass
     def leader_send(self):
         data = self.leader_data()
         self.adapter.broadcast(data, filter_=all_node)

@@ -189,7 +189,19 @@ class QueueManager:
         if self._buffered:
             return self._buffered.popleft()
         return None
-
+    def send2itselft_adapt(self,getter:DataGetter):
+        pkt = getter(self.local.id)
+        if not pkt:
+            self.logger.warning(f'send2itselft_adapt waining {self.local.id} getter get none')
+            return
+        to_queue = QueuedPacket(
+            origin=self.local,
+            send_to=self.local,
+            received_from=self.local,
+            data=pkt,
+            full_packet=None,
+        )
+        self._buffered.append(to_queue)
     async def _read(
         self, remote_id: int, ingress: PacketQueue,
     ):

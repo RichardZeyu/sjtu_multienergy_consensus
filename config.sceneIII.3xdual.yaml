@@ -34,15 +34,15 @@ nodes:
         is_delegate: yes
         is_normal: yes
         hub: "./tests/data/HUB2.xlsx"
-    #3:
-        #transport: tcpv1
-        #ip: 127.0.0.1
-        #port: 11113
-        #private_key_file: "./tests/test_keys/node3.key"
-        #public_key_file: "./tests/test_keys/node3.pub"
-        #is_delegate: yes
-        #is_normal: yes
-        #hub: "./tests/data/HUB3.xlsx"
+    3:
+        transport: tcpv1
+        ip: 127.0.0.1
+        port: 11113
+        private_key_file: "./tests/test_keys/node3.key"
+        public_key_file: "./tests/test_keys/node3.pub"
+        is_delegate: yes
+        is_normal: yes
+        hub: "./tests/data/HUB3.xlsx"
 
 # 场景配置，微网内各节点该项配置应相同。
 scene:

@@ -79,3 +79,5 @@ class QueueManagerAdapter:
         asyncio.run_coroutine_threadsafe(
             self.manager.send_to(remote, data), self.loop
         ).result()
+    def send2itselft_adpt(self,getter:DataGetter):
+        self.manager.send2itselft_adapt(getter)

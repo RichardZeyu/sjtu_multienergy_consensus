@@ -104,6 +104,7 @@ class SceneTypeIII(AbstractScene):
             # 不用初始化数据，__init__方法里有初始化
             # 初始需求量发送
             # self.normal_send()
+            self.send2itselft_adpt(self.normal_getter)
             self.normal_send_adpt(self.normal_getter)
         # delegate 代表
         while not self.scene_end and not local_delegate_ending:
@@ -124,6 +125,7 @@ class SceneTypeIII(AbstractScene):
                 # decides to exit
                 local_delegate_ending = self.check_end()
                 # self.delegate_send()
+                self.send2itselft_adpt(self.delegate_getter)
                 self.delegate_send_adapt(self.delegate_getter)
                 self.received_normal_data.preload(
                     self.node_manager, normal_only, self.local
@@ -209,6 +211,7 @@ class SceneTypeIII(AbstractScene):
         if data is not None:
             self.normal_update(data)
             self.normal_phase_done = True
+            self.send2itselft_adpt(self.normal_getter)
             self.normal_send()
             self.scene_end = self.check_end_in_data(data)
         else:
@@ -226,15 +229,16 @@ class SceneTypeIII(AbstractScene):
             return
         # 程序初始化时已经初始化received_normal_data了，所有普通节点的id都在里面了。
         if pkt.origin.id not in self.received_normal_data.all.keys():
-            self.logger.warn(
-                'pkt %r from unexpected normal node, expecting %s',
-                pkt,
-                tuple(self.received_normal_data.all.keys()),
-            )
-            return
+            #当self.local.is_normal 并且pkt.origin.id= self.local.id时，这个数据是自己发送给自己的
+            if pkt.origin.id != self.local.id or not self.local.is_normal:
+                self.logger.warn(
+                    'pkt %r from unexpected normal node, expecting %s',
+                    pkt,
+                    tuple(self.received_normal_data.all.keys()),
+                )
+                return
         # 数据添加到缓存map中
         self.received_normal_data.add(pkt)
-    
     
 
 class MultiEnergyPark(SceneTypeIII):
