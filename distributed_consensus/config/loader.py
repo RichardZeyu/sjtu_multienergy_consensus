@@ -10,7 +10,7 @@ from ..core.node import Node
 from ..core.node_manager import NodeManager, default_manager
 from ..crypto import _extract_certificate, _load_private_key, _load_public_key
 from ..crypto.util import read_all_str
-
+from ..core.node_evil import EvilGetter,NormalEvil,DelegateEvil
 L = logging.getLogger(__name__)
 
 
@@ -23,7 +23,9 @@ class Config:
     scene_parameters: typing.Dict[str, typing.Any]
     cwd: Path
     transport_parameters: typing.Dict[str, typing.Dict[str, typing.Any]]
-
+    # 作恶
+    evil_type: str
+    
     __slots__ = [
         'local_node',
         'nodes',
@@ -62,6 +64,8 @@ class Config:
         is_normal: bool,
         is_local: bool,
         transport: str,
+        normal_evil = None,
+        delegate_evil = None
     ):
         if transport != 'tcpv1':
             L.fatal(f'unsupported transport {transport}')
@@ -96,17 +100,47 @@ class Config:
 
         if node_id < 0 or node_id > 0xFFFFFFFF:
             raise ValueError(f'invalid node id {node_id}')
-
+        
+        normal = None
+        if normal_evil:
+            diffrence = normal_evil.get('diffrence')
+            if diffrence:
+                diffrence = dict({
+                    dif['node']:eval(dif['data'])
+                    for dif in diffrence
+                }) 
+            else:
+                diffrence = None
+            ignore = normal_evil.get('ignore')
+            ignore_all = normal_evil.get('ignore_all')
+            normal = NormalEvil(ignore,ignore_all,diffrence) 
+        delegate = Node
+        if delegate_evil:
+            ignore = delegate_evil.get('ignore')
+            ignore_all = delegate_evil.get('ignore_all')
+            broadcast = delegate_evil.get('broadcast')
+            diffrence =None if broadcast is None else broadcast.get('diffrence')
+            if diffrence:
+                diffrence = dict({
+                    dif['node']:eval(dif['data'])
+                    for dif in diffrence
+                }) 
+            else:
+                diffrence = None
+            from_nodes = None if broadcast is None else broadcast.get('from')
+            delegate = DelegateEvil(ignore,ignore_all,from_nodes,diffrence)
         node = Node(
             node_id,
             ip,
             port,
             public_key,
+            normal,
+            delegate,
             private_key,
             is_delegate=is_delegate,
             is_normal=is_normal,
             manager=self.node_manager,
-            hub=hub
+            hub=hub,
         )
         self.nodes.append(node)
         if is_local:

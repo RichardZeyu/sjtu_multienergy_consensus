@@ -55,10 +55,13 @@ class SceneTypeIII(AbstractScene):
     def delegate_update(self):
         raise NotImplementedError()
     @abstractmethod
-    def normal_getter(self, int)-> float:
+    def normal_getter(self, int)-> bytes:
         raise NotImplementedError()
     @abstractmethod
-    def delegate_getter(self, int)-> float:
+    def delegate_getter(self, int)-> bytes:
+        raise NotImplementedError()
+    @abstractmethod
+    def delegate_forward_getter(self,from_node,to_node,data:bytes)->bytes:
         raise NotImplementedError()
     @abstractmethod
     def normal_initiate(self):
@@ -217,7 +220,8 @@ class SceneTypeIII(AbstractScene):
     def delegate_node_action(self, pkt: QueuedPacket):
         # 广播 如果该节点已经进来过了，直接退出（无论是从代表转发或者是微网发送过来），来自代表节点也直接退出
         # 转发完成，把数据添加到received_normal_data中
-        if not self.broadcast_for_consensus(pkt):
+        if not self.broadcast_for_consensus_adpt(self.delegate_forward_getter,pkt):
+        #if not self.broadcast_for_consensus(pkt):
             # implying pkt is a normal packet
             return
         # 程序初始化时已经初始化received_normal_data了，所有普通节点的id都在里面了。
@@ -345,10 +349,15 @@ class MultiEnergyPark(SceneTypeIII):
     def normal_initiate(self):
         # self.normal_value = self.demand_value(self.first_demand)
         self.normal_value = self.node_update.init_demand()
+        # normal_data = self.local.normal_value(4,self.normal_value)
+        # return normal_data
     def normal_getter(self,node_id: int):
         # 这里需要处理一下 normal_value
+        normal_data = self.local.normal_value(node_id,self.normal_value)
+        if not normal_data:
+            return None
         data = self._Data(
-            DataType.NormalToDelegate, self.round_id, self.normal_value, False
+            DataType.NormalToDelegate, self.round_id, normal_data, False
         ).pack()
         # real = self._Data.from_bytes(data)
         return data
@@ -359,11 +368,25 @@ class MultiEnergyPark(SceneTypeIII):
         hp = values[2]
         index = (int)((node_id-1)/4)
         send = [gp,ep,hp[index]]
+        delegate_data = self.local.delegate_value(node_id,send)
+        if not delegate_data:
+            return None
         return self._Data(
             DataType.DelegateToNormal,
             self.round_id,
             send,
             self.check_end(),
+        ).pack()
+    def delegate_forward_getter(self,from_node,to_node,data:bytes)->bytes:
+        delegate_data = self._Data.from_bytes(data)
+        delegate_value = self.local.delegate_forward_value(from_node,to_node,delegate_data.value)
+        if not delegate_value:
+            return None
+        return self._Data(
+            delegate_data.data_type,
+            delegate_data.round_id,
+            delegate_value,
+            delegate_data.is_end,
         ).pack()
     # 普通节点更新数据
     # 需要使用nodeUpdate来进行update
@@ -444,16 +467,18 @@ class MultiEnergyPark(SceneTypeIII):
         pass
         if self.local.pure_normal:
             return
-        file = open(f'./tests/cache/price_{self.local.id}_{self.round_id}.csv',mode='a')
+        file = open(f'./tests/cache/price_{self.local.id}_{self.round_id}.csv',mode='w')
         for _, pkts in self.received_normal_data.all.items():
             # this method is supposed to be called after clearup evil nodes
+            if not pkts or len(pkts)==0:
+               continue
             pkt = list(pkts)[0]
             values = self._Data.from_bytes(pkt.data).value
             demand = f'{_},{values[0]},{values[1]},{values[2]}\n'
             file.writelines(demand)
         file.close()
     def write_price(self):
-        price = f'{self.delegate_value[1]},{self.delegate_value[0]},{self.delegate_value[2][0]},{self.delegate_value[2][1]},{self.delegate_value[2][2]}\n'
+        price = f'{self.round_id},{self.delegate_value[1]},{self.delegate_value[0]},{self.delegate_value[2][0]},{self.delegate_value[2][1]},{self.delegate_value[2][2]}\n'
         file = open(f'./tests/cache/price{self.local.id}.csv',mode='a')
         file.writelines(price)
         file.close()

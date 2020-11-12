@@ -17,7 +17,7 @@ NodeFilter = Callable[[BaseNode], bool]
 
 # 代表回复普通节点的数据获取回调
 DataGetter = Callable[[int], bytes]
-
+ForwardGetter = Callable[[int,int,bytes],bytes]
 def all_node(n: BaseNode) -> bool:
     return True
 
@@ -123,6 +123,8 @@ class QueueManager:
 
             self.logger.debug(f'broadcast pkt to remote {node_id}')
             pkt = getter(node_id)
+            if not pkt:
+                continue
             to_queue = QueuedPacket(
                 origin=self.local,
                 send_to=remote,
@@ -154,6 +156,31 @@ class QueueManager:
                 send_to=remote,
                 received_from=self.local,
                 data=to_forward.data,
+                full_packet=to_forward.full_packet,
+            )
+            await egress.put(to_queue)
+    async def broadcast_forward_adpt(self,
+        getter:ForwardGetter,
+        to_forward: QueuedPacket,
+        filter_: NodeFilter = all_node,
+        loopback=False,
+    ):
+        for node_id, (_, egress) in self._by_node.items():
+            remote = self.node_manager.get_node(node_id)
+            assert remote is not None
+            if not filter_(remote):
+                self.logger.debug(f'{remote} is filtered out by {filter!r}')
+                continue
+            if not loopback and to_forward.origin == remote:
+                self.logger.debug(f'{remote} is origin, no loopback')
+                continue
+            to_data = getter(to_forward.origin,node_id,to_forward.data)
+            self.logger.debug(f'forward pkt to remote {node_id}')
+            to_queue = QueuedPacket(
+                origin=to_forward.origin,
+                send_to=remote,
+                received_from=self.local,
+                data=to_data,
                 full_packet=to_forward.full_packet,
             )
             await egress.put(to_queue)

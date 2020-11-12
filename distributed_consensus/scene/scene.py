@@ -6,7 +6,7 @@ from enum import Enum
 
 from ..core.node import Node
 from ..core.node_manager import BaseNode, NodeManager
-from ..queue.manager import DataGetter
+from ..queue.manager import DataGetter,ForwardGetter
 from ..sync_adapter import (
     QueuedPacket,
     QueueManagerAdapter,
@@ -167,7 +167,7 @@ class AbstractScene(ABC):
         # 广播消息 filter_相当于一个代理方法(表达式、回调)
         self.adapter.broadcast(data, filter_=delegate_only)
     def normal_send_adpt(self,getter: DataGetter):
-        self.adapter.broadcast(getter, filter_=delegate_only)
+        self.adapter.broadcast_adapt(getter, filter_=delegate_only)
     def delegate_send(self):
         data = self.delegate_data()
         self.adapter.broadcast(data, filter_=normal_only)
@@ -194,7 +194,13 @@ class AbstractScene(ABC):
             self.adapter.broadcast_forward(pkt, filter_=filter_)
             return True
         return False
-
+    def delegate_forward_adpt(self,getter:ForwardGetter,pkt: QueuedPacket, filter_: NodeFilter)->bool:
+        # seen?这个不用每轮清空吗?
+        if (pkt.origin.id, pkt.data) not in self.seen: 
+            self.seen.add((pkt.origin.id, pkt.data))
+            self.adapter.broadcast_forward_adpt(getter,pkt, filter_=filter_)
+            return True
+        return False
     def extract_majority(self, received: NodeDataMap):
         # local_delegate_data 为本地代表发送的数据
         # received 为 received_delegate_data，从代表中接收到的数据
@@ -263,7 +269,15 @@ class AbstractScene(ABC):
 
         self.delegate_forward(pkt, delegate_only)
         return True
-
+    def broadcast_for_consensus_adpt(self,getter:ForwardGetter,pkt: QueuedPacket)->bool:
+        if not self.local.is_delegate:
+            self.logger.debug("local is not delegate node, abort",)
+            return False
+        if not self.is_normal_packet(pkt):
+            self.logger.debug(f"{pkt} is not from normal node, ignore",)
+            return False
+        self.delegate_forward_adpt(getter,pkt, delegate_only)
+        return True
     @abstractmethod
     def run(self):
         raise NotImplementedError()

@@ -4,7 +4,7 @@ from .node_manager import AutoRegisterNode
 from OpenSSL.crypto import PKey
 from pprint import pformat
 from ipaddress import ip_address
-from .normal_evil import NormalEvil
+from .node_evil import NormalEvil,DelegateEvil
 
 class Node(AutoRegisterNode):
     ip: str
@@ -13,18 +13,21 @@ class Node(AutoRegisterNode):
     private_key: typing.Union[str, PKey, None]
     hub: str
     normal_evil: NormalEvil
+    delegate_evil: DelegateEvil
     def __init__(
         self,
         id,
         ip,
         port,
         public_key,
+        normal_evil:NormalEvil,
+        deledate_evil:DelegateEvil,
         private_key=None,
         hub= None,
         manager=None,
         is_delegate=False,
         is_normal=False,
-        is_blacked=False,
+        is_blacked=False
     ):
         super().__init__(
             id,
@@ -38,7 +41,22 @@ class Node(AutoRegisterNode):
         self.public_key = public_key
         self.private_key = private_key
         self.hub = hub
+        self.normal_evil = normal_evil
+        self.delegate_evil = deledate_evil
 
+    def normal_value(self,send_node_id:int,values:typing.List[float]):
+        if self.normal_evil:
+            return self.normal_evil.evil_value(send_node_id,values)
+        return values
+    def delegate_value(self,send_node_id:int,values:typing.List[float]):
+        if self.delegate_evil:
+            return self.delegate_evil.evil_value(send_node_id,values)
+        return values
+    def delegate_forward_value(self,from_node_id:int, send_node_id:int,values:typing.List[float]):
+        if self.delegate_evil:
+            return self.delegate_evil.forward_evil_value(from_node_id,send_node_id,values)
+        return values
+        
     def to_dict(self) -> typing.Dict[str, typing.Any]:
         return {
             'id': self.id,

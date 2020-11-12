@@ -7,7 +7,7 @@ from time import sleep
 from ..core.node import Node
 from ..queue.manager import NodeFilter,DataGetter, QueueManager, all_node
 from ..queue.packet import QueuedPacket
-
+from ..queue.manager import DataGetter,ForwardGetter
 L = logging.getLogger(__name__)
 
 
@@ -71,7 +71,10 @@ class QueueManagerAdapter:
         asyncio.run_coroutine_threadsafe(
             self.manager.broadcast_forward(to_forward, filter_), self.loop
         ).result()
-
+    def broadcast_forward_adpt(self,getter:ForwardGetter, to_forward: QueuedPacket, filter_: NodeFilter = all_node):
+        asyncio.run_coroutine_threadsafe(
+            self.manager.broadcast_forward_adpt(getter,to_forward, filter_), self.loop
+        ).result()
     def send_to(self, remote: Node, data: bytes):
         asyncio.run_coroutine_threadsafe(
             self.manager.send_to(remote, data), self.loop

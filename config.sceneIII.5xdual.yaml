@@ -25,15 +25,19 @@ nodes:
         # 节点是否为普通节点
         is_normal: yes
         normal_evil: 
-            ignore: [4,5]
+            # 不发数据给某几个代表
+            #ignore: [4]
+            # 不发数据给所有代表
             ignore_all: false
+            # 不同代表发送不同数据
             diffrence: 
-                -
-                    node: 3
-                    data: 'lambda gd,ed,hd:[0.1*gd,0.1*ed,0.1*hd]'
-                -
-                    node: 4 
-                    data: 'lambda gd,ed,hd:[0.2*gd,0.2*ed,0.2*hd]'
+                #-
+                    #node: 3
+                    #data: 'lambda gd,ed,hd:[0.1*gd,0.1*ed,0.1*hd]'
+                #-
+                    #node: 4 
+                    #data: 'lambda gd,ed,hd:[0.1*gd,0.1*ed,0.1*hd]'
+        
         hub: "./tests/data/HUB1.xlsx"
     2:
         transport: tcpv1
@@ -71,6 +75,24 @@ nodes:
         is_delegate: yes
         is_normal: no
         hub: "./tests/data/HUB4.xlsx"
+        delegate_evil: 
+            # 不发数据给某几个微网
+            #ignore: [4]
+            # 不发数据给所有微网
+            ignore_all: true
+            # 转发修改
+            broadcast: 
+                # 普通节点来源，也就是与代表作恶的节点
+                from: [1,2]
+                diffrence: 
+                    -
+                        # 转发的代表
+                        node: 5
+                        data: 'lambda gd,ed,hd:[0.1*gd,0.1*ed,0.1*hd]'
+                    #-
+                        # 转发的代表
+                        #node: 4 
+                        #data: 'lambda gd,ed,hd:[0.1*gd,0.1*ed,0.1*hd]'
     5:
         transport: tcpv1
         ip: 127.0.0.1
