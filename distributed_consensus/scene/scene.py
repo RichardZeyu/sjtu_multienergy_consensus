@@ -171,7 +171,8 @@ class AbstractScene(ABC):
     # 发送数据给自己，这个是当自己即是普通节点，又是代表节点时
     # 只是把数据添加到buffer中，不必真的做发送操作
     def send2itselft_adpt(self,getter:DataGetter):
-        self.adapter.send2itselft_adpt(getter)
+        if self.local.is_normal and self.local.is_delegate:
+            self.adapter.send2itselft_adpt(getter)
         
     def delegate_send(self):
         data = self.delegate_data()
@@ -205,7 +206,7 @@ class AbstractScene(ABC):
         return False
     def delegate_forward_adpt(self,getter:ForwardGetter,pkt: QueuedPacket, filter_: NodeFilter)->bool:
         # seen?这个不用每轮清空吗?
-        if (pkt.origin.id, pkt.data) not in self.seen: 
+        if (pkt.origin.id, pkt.data) not in self.seen:
             self.seen.add((pkt.origin.id, pkt.data))
             self.adapter.broadcast_forward_adpt(getter,pkt, filter_=filter_)
             return True
