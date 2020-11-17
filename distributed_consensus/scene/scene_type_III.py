@@ -336,7 +336,9 @@ class MultiEnergyPark(SceneTypeIII):
         gd = []
         ed = []
         hd = []
-        for _, pkts in self.received_normal_data.all.items():
+        items = self.received_normal_data.all.items()
+        items = sorted(items)
+        for _, pkts in items:
             # this method is supposed to be called after clearup evil nodes
             pkt = list(pkts)[0]
             values = self._Data.from_bytes(pkt.data).value
@@ -381,17 +383,18 @@ class MultiEnergyPark(SceneTypeIII):
             send,
             self.check_end(),
         ).pack()
-    def delegate_forward_getter(self,from_node,to_node,data:bytes)->bytes:
+    def delegate_forward_getter(self,from_node,to_node,data:bytes)->[bytes,bool]:
         delegate_data = self._Data.from_bytes(data)
         delegate_value = self.local.delegate_forward_value(from_node,to_node,delegate_data.value)
         if not delegate_value:
             return None
-        return self._Data(
+        send_data = self._Data(
             delegate_data.data_type,
             delegate_data.round_id,
             delegate_value,
             delegate_data.is_end,
         ).pack()
+        return [send_data,delegate_value == delegate_data.value]
     # 普通节点更新数据
     # 需要使用nodeUpdate来进行update
     def normal_update(self, data: bytes):
@@ -472,14 +475,18 @@ class MultiEnergyPark(SceneTypeIII):
         if self.local.pure_normal:
             return
         file = open(f'./tests/cache/price_{self.local.id}_{self.round_id}.csv',mode='w')
-        for _, pkts in self.received_normal_data.all.items():
+        items = self.received_normal_data.all.items()
+        items = sorted(items)
+        for _, pkts in items:
             # this method is supposed to be called after clearup evil nodes
             if not pkts or len(pkts)==0:
                continue
-            pkt = list(pkts)[0]
-            values = self._Data.from_bytes(pkt.data).value
-            demand = f'{_},{values[0]},{values[1]},{values[2]}\n'
-            file.writelines(demand)
+            for pkt in pkts:
+                #pkt = list(pkts)[0]
+                received_from = pkt.received_from.id
+                values = self._Data.from_bytes(pkt.data).value
+                demand = f'{_},{received_from},{values[0]},{values[1]},{values[2]}\n'
+                file.writelines(demand)
         file.close()
     def write_price(self):
         price = f'{self.round_id},{self.delegate_value[1]},{self.delegate_value[0]},{self.delegate_value[2][0]},{self.delegate_value[2][1]},{self.delegate_value[2][2]}\n'

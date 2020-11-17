@@ -2,7 +2,7 @@ import asyncio
 import logging
 import typing
 from collections import deque
-from typing import Set, Callable
+from typing import Set, Callable,Tuple
 
 from ..core.node import Node
 from ..core.node_manager import BaseNode, NodeManager
@@ -13,7 +13,7 @@ L = logging.getLogger(__name__)
 EOC = None
 
 
-NodeFilter = Callable[[BaseNode], bool]
+NodeFilter = Callable[[BaseNode], Tuple]
 
 # 代表回复普通节点的数据获取回调
 DataGetter = Callable[[int], bytes]
@@ -174,15 +174,16 @@ class QueueManager:
             if not loopback and to_forward.origin == remote:
                 self.logger.debug(f'{remote} is origin, no loopback')
                 continue
-            to_data = getter(to_forward.origin,node_id,to_forward.data)
+            to_data,nochange = getter(to_forward.origin.id,node_id,to_forward.data)
+            self.logger.warn(f'to_data:{to_data},nochange:{nochange}')
             self.logger.debug(f'forward pkt to remote {node_id}')
             to_queue = QueuedPacket(
                 origin=to_forward.origin,
                 send_to=remote,
                 received_from=self.local,
                 data=to_data,
-                full_packet=to_forward.full_packet,
-            )
+                full_packet=to_forward.full_packet if nochange else None,#to_forward.full_packet会包含所有的原始数据，当这个字段有数时，会直接发送这个字段的数据，不会重新打包，这导致修改后的数据没有发送过去
+            )   
             await egress.put(to_queue)
 
     def receive_one_no_wait(self) -> typing.Optional[QueuedPacket]:

@@ -61,8 +61,10 @@ def verify(public_key, signature, data: bytes, digest=SHA256):
     try:
         crypto.verify(cert, signature, data, digest)
     except crypto.Error as exc:
-        if 'bad signature' in flattern(exc.args):
-            return False
-        else:
-            raise
+        return False
+        # flattern(exc.args)
+        #if 'bad signature' in flattern(exc.args):
+            #return False
+        #else:
+            #raise
     return True

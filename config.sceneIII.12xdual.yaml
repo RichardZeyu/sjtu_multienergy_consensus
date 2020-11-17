@@ -24,6 +24,19 @@ nodes:
         is_delegate: no
         # 节点是否为普通节点
         is_normal: yes
+        normal_evil: 
+            # 不发数据给某几个代表
+            # ignore: [10]
+            # 不发数据给所有代表
+            #ignore_all: true
+            # 不同代表发送不同数据
+            diffrence: 
+                # -
+                #     node: 10
+                #     data: 'lambda gd,ed,hd:[0.1*gd,0.1*ed,0.1*hd]'
+                # -
+                #     node: 4 
+                #     data: 'lambda gd,ed,hd:[0.1*gd,0.1*ed,0.1*hd]'
         hub: "./tests/data/HUB1.xlsx"
     2:
         transport: tcpv1
@@ -103,8 +116,26 @@ nodes:
         port: 11120
         private_key_file: "./tests/test_keys/node3.key"
         public_key_file: "./tests/test_keys/node3.pub"
-        is_delegate: no
+        is_delegate: yes
         is_normal: yes
+        delegate_evil: 
+            # 不发数据给某几个微网
+            ignore: [1]
+            # 不发数据给所有微网
+            # ignore_all: true
+            # 转发修改
+            #broadcast: 
+                # 普通节点来源，也就是与代表串谋作恶的节点
+                #from: [1]
+                #diffrence: 
+                    #-
+                        # 转发的代表
+                        #node: 11
+                        #data: 'lambda gd,ed,hd:[0.1*gd,0.1*ed,0.1*hd]'
+                    #-
+                        # 转发的代表
+                        #node: 12 
+                        #data: 'lambda gd,ed,hd:[0.1*gd,0.1*ed,0.1*hd]'
         hub: "./tests/data/HUB10.xlsx"
     11:
         transport: tcpv1
@@ -112,7 +143,7 @@ nodes:
         port: 11121
         private_key_file: "./tests/test_keys/node3.key"
         public_key_file: "./tests/test_keys/node3.pub"
-        is_delegate: no
+        is_delegate: yes
         is_normal: yes
         hub: "./tests/data/HUB11.xlsx"
     12:
@@ -121,7 +152,7 @@ nodes:
         port: 11122
         private_key_file: "./tests/test_keys/node3.key"
         public_key_file: "./tests/test_keys/node3.pub"
-        is_delegate: no
+        is_delegate: yes
         is_normal: yes
         hub: "./tests/data/HUB12.xlsx"  
 
@@ -137,10 +168,7 @@ scene:
         first_demand: "./tests/data/first_demand.xlsx"
         demand: "./tests/data/demand.xlsx"
         price_ge: "./tests/data/price_ge.xlsx"
-        initial: "./tests/data/initialValue.xlsx"
-        
-
-
+        initial: "./tests/data/initialValue.xlsx"      
 
 # 传输层参数
 # key为需要配置的传输层（目前只支持tcpv1），值为该层的控制参数

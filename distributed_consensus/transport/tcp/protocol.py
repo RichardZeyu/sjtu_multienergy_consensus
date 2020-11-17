@@ -75,7 +75,8 @@ class TCPProtocolV1:
         self.logger.debug('feeding %s', b2a_hex(bs))
         self.buf.write(bs)
 
-    def decode(self, bs: bytes) -> typing.Optional[QueuedPacket]:
+    # 返回包、origin_node_id、是否解析成功
+    def decode(self, bs: bytes) -> [typing.Optional[QueuedPacket],int,bool]:
         assert self.remote is not None, 'handshake incomplete'
         if bs:
             self.feed_buffer(bs)
@@ -88,12 +89,12 @@ class TCPProtocolV1:
         original_id, pkt_len = header
         full_len = self.header_recv_len + pkt_len + self.signature_len
         if len(self.buf) < full_len:
-            return None
+            return [None,original_id,True]
 
         original_node = self.node_manager.get_node(original_id)
         if original_node is None:
             self.logger.warn(f'cannot find original node {original_id}, drop')
-            return None
+            return [None,original_id,False]
         assert isinstance(original_node, Node)
 
         # drop header which has been peeked
@@ -106,34 +107,38 @@ class TCPProtocolV1:
             self.logger.warn(
                 'pkt signature corrupted, drop %d bytes', len(pkt)
             )
-            return None
+            return [None,original_id,False]
 
         self.logger.debug('pkt parsed & verified %s', b2a_hex(pkt))
 
-        return QueuedPacket(
+        recieve = QueuedPacket(
             origin=original_node,
             received_from=self.remote,
             send_to=self.local,
             data=pkt,
             full_packet=header_bs + pkt + signature,
         )
+        return [recieve,original_id,True]
 
     def encode(self, pkt: QueuedPacket) -> bytes:
-        if pkt.origin != self.local:
-            assert pkt.full_packet is not None
+        original_node = self.node_manager.get_node(pkt.origin.id)
+        if pkt.origin != self.local and pkt.full_packet is not None:
             return pkt.full_packet
 
         data: bytes = pkt.data
         self.logger.debug('pkt to encode %s', b2a_hex(data))
         header = struct.pack(
-            self.packet_header_struct, self.local.id, len(data)
+            self.packet_header_struct, original_node.id, len(data)
         )
         self.logger.debug('header: %s', b2a_hex(header))
         bs = header + data
+        # 只能用本地私钥进行加密
+        # 可能local之外的node没有private_key
+        # signature = sign(self.local.private_key, bs, self.digest)
         signature = sign(self.local.private_key, bs, self.digest)
         # self.logger.debug('encoded: %s', b2a_hex(bs))
         return bs + signature
-
+    # 还需要再读取 num_to_read 个字节才能解析header或者完整的包
     def num_to_read(self) -> int:
         """ return minimal number of bytes needed to parse next packet """
         buf_len = len(self.buf)

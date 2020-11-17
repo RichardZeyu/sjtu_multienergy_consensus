@@ -23,12 +23,14 @@ class TCPConnectionHandler:
     nodes_incoming: asyncio.Semaphore
     server: typing.Optional[asyncio.AbstractServer]
 
+    loop: asyncio.BaseEventLoop
     def __init__(
         self,
         local_node: Node,
         node_manager: NodeManager,
         queue_manager: QueueManager,
         protocol_class: typing.Type[TCPProtocolV1],
+        loop: asyncio.BaseEventLoop
     ):
         super().__init__()
         self.local_node = local_node
@@ -41,7 +43,7 @@ class TCPConnectionHandler:
         self.pending_nodes = set()
         self.pending_connectors = set()
         self.nodes_incoming = asyncio.Semaphore(0)
-
+        self.loop = loop
     async def send_handshake(
         self, writer: asyncio.StreamWriter, protocol: TCPProtocolV1,
     ):
@@ -224,6 +226,8 @@ class TCPConnectionHandler:
                 except asyncio.CancelledError:
                     closing = True
                 else:
+                    if to_send.origin.id == 1 and to_send.received_from and to_send.received_from.id ==4:
+                        self.logger.warn(f'send {to_send}')
                     to_send = protocol.encode(to_send)
                     writer.write(to_send)
                     self.logger.debug(f'send {b2a_hex(to_send)!s}')
@@ -238,12 +242,17 @@ class TCPConnectionHandler:
                 self.logger.debug(f'received {b2a_hex(bs)!s}')
 
                 while True:
-                    pkt = protocol.decode(bs)
+                    pkt,origin_id,verify = protocol.decode(bs)
                     bs = b''
-                    if pkt is None:
+                    if pkt is None and verify:
                         assert (
                             protocol.num_to_read() > 0
                         ), 'cannot consume buffer'
+                        break
+                    elif pkt is None and not verify:
+                        # 接收到数据，但是数据签名验证异常
+                        # 
+                        self.closing(origin_id)
                         break
                     else:
                         await ingress.put(pkt)
@@ -310,7 +319,7 @@ class TCPConnectionHandler:
             # 等待信号量
             await self.nodes_incoming.acquire()
             # 当数组为空时，数组/set 值被隐式地赋为False
-            # not self.pending_nodes为true表示数组为空
+            # not self.pending_nodes为true表示数组为空 
             # 也就是所有的节点都连接进来时，释放信号
             if not self.pending_nodes:
                 event.set()
@@ -407,3 +416,10 @@ class TCPConnectionHandler:
         for node in self.node_manager.nodes():
             if isinstance(node, Node):
                 self.queue_manager.close(node)
+   
+    def closing(self, node_id:int):
+        self.node_manager.block(node_id)
+        evil_node = self.node_manager.get_node(node_id)
+        if evil_node is not None and isinstance(evil_node, Node):
+            self.loop.call_soon_threadsafe(self.queue_manager.close, evil_node)
+        self.logger.warn(f'node {node_id} has been blocked')
