@@ -120,7 +120,7 @@ nodes:
         is_normal: yes
         delegate_evil: 
             # 不发数据给某几个微网
-            ignore: [1]
+            # ignore: [1]
             # 不发数据给所有微网
             # ignore_all: true
             # 转发修改
@@ -163,7 +163,7 @@ scene:
     # 创建场景类实例时需要传入的参数。程序使用keyword方式传参，因此参数顺序并不重要。
     params:
         final_round: 2000
-        round_timeout_sec: 30.0
+        round_timeout_sec: 10.0
         round_end_cache: "./tests/cache/round_end.txt"
         first_demand: "./tests/data/first_demand.xlsx"
         demand: "./tests/data/demand.xlsx"
