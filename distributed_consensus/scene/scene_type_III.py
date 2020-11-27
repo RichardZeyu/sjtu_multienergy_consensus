@@ -333,18 +333,18 @@ class MultiEnergyPark(SceneTypeIII):
         # else:
             # self.delegate_value = 0
         self.pre_delegate_value =copy.deepcopy(self.delegate_value) 
-        gd = []
-        ed = []
-        hd = []
+        gd = [0 for i in range(12)]
+        ed = [0 for i in range(12)]
+        hd = [0 for i in range(12)]
         items = self.received_normal_data.all.items()
         items = sorted(items)
         for _, pkts in items:
             # this method is supposed to be called after clearup evil nodes
             pkt = list(pkts)[0]
             values = self._Data.from_bytes(pkt.data).value
-            gd.append(values[0])
-            ed.append(values[1])
-            hd.append(values[2])
+            gd[pkt.origin.id-1] = values[0]
+            ed[pkt.origin.id-1] = values[1]
+            hd[pkt.origin.id-1] = values[2]
             # self.delegate_value += self._Data.from_bytes(pkt.data).value
         # price = self.delegate_value
         # 这里delegate_update会在round_id的下一轮才执行，所以这里需要减1

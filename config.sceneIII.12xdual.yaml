@@ -28,7 +28,7 @@ nodes:
             # 不发数据给某几个代表
             # ignore: [10]
             # 不发数据给所有代表
-            #ignore_all: true
+            ignore_all: true
             # 不同代表发送不同数据
             diffrence: 
                 # -
